@@ -1169,7 +1169,25 @@ function refresh() {
 /* ---------- service worker ---------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    // Se esta página já nasceu sob controle de um SW, uma troca de
+    // controlador mais tarde significa que uma versão nova acabou de assumir
+    // em segundo plano — não antes disso, ou o primeiro registro deste
+    // dispositivo dispararia o aviso à toa. Os dados (IndexedDB/localStorage)
+    // nunca são tocados por essa troca; só o app shell em cache é renovado.
+    let hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) { hadController = true; return; }
+      banner('Nova versão disponível.', 'Atualizar', () => location.reload());
+    });
+
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // Checa por atualização ao voltar ao app e periodicamente enquanto aberto,
+      // em vez de depender só da checagem esporádica do navegador.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    }).catch(() => {});
   });
 }
 
