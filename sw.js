@@ -9,7 +9,7 @@
    Os dados do usuário NÃO passam por aqui — vivem em IndexedDB/localStorage.
 */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `smokecount-shell-${VERSION}`;
 const RUNTIME = `smokecount-rt-${VERSION}`;
 
