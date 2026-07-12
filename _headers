@@ -1,0 +1,13 @@
+# Redundância caso o netlify.toml não seja lido (deploy por drag-and-drop).
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Service-Worker-Allowed: /
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

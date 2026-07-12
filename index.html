@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FBFBF9">
+<meta name="description" content="Contador de cigarros com análise estatística do hábito.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SmokeCount">
+<title>SmokeCount</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="hdr">
+    <div class="lg">Smoke<span>Count</span><em>STATISTICAL ENGINE</em></div>
+    <div class="hq">
+      <span class="dot" id="dot" title="Estado do armazenamento"></span>
+      <span class="n" id="qn">—</span>
+      <button class="plus" id="plus" aria-label="Registrar cigarro">+</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner">
+    <span id="bannerMsg"></span>
+    <button id="bannerAct">Ver</button>
+  </div>
+
+  <nav class="tabs">
+    <button class="on" data-v="v1">Série</button>
+    <button data-v="v2">Ritmo</button>
+    <button data-v="v3">Causas</button>
+    <button data-v="v4">Registros</button>
+    <button data-v="v5">Dados</button>
+  </nav>
+
+  <main class="body" id="body">
+
+    <!-- ============ SÉRIE ============ -->
+    <section class="view on" id="v1">
+      <div id="v1Empty" class="empty" hidden>
+        Sem registros suficientes.<br>Registre alguns cigarros para a análise começar.
+      </div>
+      <div id="v1Content">
+        <div class="hero">
+          <div class="top">
+            <div>
+              <div class="big" id="hMean">—</div>
+              <div class="u">cigarros/dia · média de <span id="hN">—</span> dias</div>
+              <div class="ci" id="hCI">—</div>
+            </div>
+            <div class="rt">
+              <div class="dl" id="hSlope">—</div>
+              <div class="dls">tendência OLS</div>
+              <div class="sig" id="hSig">—</div>
+            </div>
+          </div>
+          <svg class="spark" id="spark" viewBox="0 0 320 36" preserveAspectRatio="none"></svg>
+        </div>
+
+        <div class="sg" id="sgDesc"></div>
+
+        <h2>Série diária <em id="glLab">—</em></h2>
+        <div class="pane">
+          <div class="dd" id="dd"><div class="gl" id="gl" data-l=""></div></div>
+          <div class="ax"><span id="ddA">—</span><span>hoje</span></div>
+          <div class="ins" id="insDisp"></div>
+        </div>
+
+        <h2>Carta de controle EWMA <em>λ=0,3 · ±3σ</em></h2>
+        <p class="nt">Separa ruído do dia a dia de mudança real de comportamento. Pontos fora dos limites são dias estatisticamente anômalos.</p>
+        <div class="pane">
+          <svg class="chart" id="ewma" viewBox="0 0 320 96" preserveAspectRatio="none" style="height:96px"></svg>
+          <div class="ax"><span>início</span><span>hoje</span></div>
+          <div class="ins" id="insEwma"></div>
+        </div>
+
+        <h2>Autocorrelação <em>ACF · lag 1–14</em></h2>
+        <p class="nt">Mede se o consumo de hoje prevê o de amanhã. Pico no lag 7 = a semana tem ritmo próprio.</p>
+        <div class="pane">
+          <svg class="chart" id="acf" viewBox="0 0 320 84" preserveAspectRatio="none" style="height:84px"></svg>
+          <div class="ax"><span>lag 1</span><span>lag 7</span><span>lag 14</span></div>
+          <div class="ins" id="insAcf"></div>
+        </div>
+
+        <h2>Dia da semana <em>ANOVA</em></h2>
+        <div class="pane">
+          <svg class="chart" id="wk" viewBox="0 0 320 86" preserveAspectRatio="none" style="height:86px"></svg>
+          <div class="ins" id="insWk"></div>
+        </div>
+
+        <h2>Projeção <em>OLS · IC 80%</em></h2>
+        <div class="pane">
+          <svg class="chart" id="fc" viewBox="0 0 320 96" preserveAspectRatio="none" style="height:96px"></svg>
+          <div class="ax"><span>histórico</span><span>hoje</span><span>+30d</span></div>
+          <div class="ins ok" id="insFc"></div>
+        </div>
+
+        <p class="ft">Todas as estatísticas são calculadas ao vivo a partir dos seus registros. Estimativas educativas; não substituem orientação médica.</p>
+      </div>
+    </section>
+
+    <!-- ============ RITMO ============ -->
+    <section class="view" id="v2">
+      <div id="v2Empty" class="empty" hidden>
+        Sem intervalos suficientes.<br>É preciso ao menos dois cigarros no mesmo dia.
+      </div>
+      <div id="v2Content">
+        <div class="sg" id="sgRit" style="margin-top:2px"></div>
+
+        <h2>Distribuição horária <em id="hhLab">—</em></h2>
+        <div class="pane">
+          <div class="hh" id="hh"></div>
+          <div class="ax"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span></div>
+          <div class="ins" id="insHH"></div>
+        </div>
+
+        <h2>Sobrevivência do intervalo <em>Kaplan–Meier</em></h2>
+        <p class="nt">Probabilidade de você <b>ainda não</b> ter acendido o próximo, t minutos depois do último.</p>
+        <div class="pane">
+          <svg class="chart" id="km" viewBox="0 0 320 96" preserveAspectRatio="none" style="height:96px"></svg>
+          <div class="ax"><span>0</span><span>60min</span><span>120min</span><span>180min+</span></div>
+          <div class="ins" id="insKM"></div>
+        </div>
+
+        <h2>Função de risco <em>hazard por faixa</em></h2>
+        <p class="nt">Chance de acender o próximo em cada janela de 20 min, dado que você chegou até ali.</p>
+        <div class="pane">
+          <svg class="chart" id="hz" viewBox="0 0 320 76" preserveAspectRatio="none" style="height:76px"></svg>
+          <div class="ax"><span>0–20</span><span>60–80</span><span>120–140</span><span>180+</span></div>
+          <div class="ins" id="insHz"></div>
+        </div>
+
+        <h2>Hora × dia da semana <em>densidade</em></h2>
+        <div class="pane">
+          <div class="hm" id="hm"></div>
+          <div class="lgd"><span>menos</span>
+            <i style="background:#F1EFEA"></i><i style="background:#F4E3C8"></i>
+            <i style="background:#EDC796"></i><i style="background:#DE9A63"></i>
+            <i style="background:#C9663E"></i><i style="background:#A83C22"></i>
+            <span>mais</span></div>
+          <div class="ins" id="insHM"></div>
+        </div>
+
+        <h2>Concentração <em>Lorenz · Gini</em></h2>
+        <p class="nt">Quanto do consumo se concentra em poucas horas. Gini alto = hábito ritualizado, com alvo claro.</p>
+        <div class="pane">
+          <svg class="chart" id="lz" viewBox="0 0 320 100" preserveAspectRatio="none" style="height:100px"></svg>
+          <div class="ins" id="insLz"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CAUSAS ============ -->
+    <section class="view" id="v3">
+      <div class="sg" id="sgCz" style="margin-top:2px"></div>
+
+      <h2>Ranking de causas <em id="czN">—</em></h2>
+      <div class="pane">
+        <table class="tb" id="czTb">
+          <thead><tr><th>Causa</th><th>N</th><th>%</th><th>Vontade</th><th>IC 95%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="ins" id="insCz"></div>
+      </div>
+
+      <h2>Vontade média por causa <em>escala 1–5</em></h2>
+      <p class="nt">Vermelho = dependência de nicotina naquele contexto. Verde = hábito automático, o alvo mais fácil.</p>
+      <div class="pane"><div id="czCrav"></div><div class="ins ok" id="insCrav"></div></div>
+
+      <h2>Cadeia de Markov <em>causa → próxima</em></h2>
+      <p class="nt">Probabilidade de a causa da linha ser seguida pela da coluna. Revela os encadeamentos.</p>
+      <div class="pane">
+        <div class="mk" id="mk"></div>
+        <div class="ins" id="insMk"></div>
+      </div>
+
+      <h2>Qui-quadrado <em>causa × período</em></h2>
+      <p class="nt">Testa se cada causa tem seu horário ou se se distribuem por acaso.</p>
+      <div class="pane">
+        <table class="tb" id="chiTb">
+          <thead><tr><th>Causa</th><th>Manhã</th><th>Tarde</th><th>Noite</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="ins" id="insChi"></div>
+      </div>
+
+      <h2>Cobertura dos dados</h2>
+      <div class="pane">
+        <table class="tb"><tbody>
+          <tr><td>Registros com causa</td><td id="cv1">—</td></tr>
+          <tr><td>Sem causa marcada</td><td id="cv2">—</td></tr>
+          <tr class="tot"><td>Cobertura</td><td id="cv3">—</td></tr>
+        </tbody></table>
+        <div class="ins" id="insCov"></div>
+      </div>
+    </section>
+
+    <!-- ============ REGISTROS ============ -->
+    <section class="view" id="v4">
+      <div class="rbar">
+        <button class="rb" id="aNow">+ Agora</button>
+        <button class="rb alt" id="aBack">Retroativo</button>
+      </div>
+      <p class="nt">Toque no <b>horário</b> ou nas <b>tags</b> para editar · <b>×</b> exclui · tudo recalcula na hora.</p>
+      <div id="rl"></div>
+    </section>
+
+    <!-- ============ DADOS ============ -->
+    <section class="view" id="v5">
+      <div class="card">
+        <div class="ct"><span class="dot" id="dot2"></span> Armazenamento</div>
+        <div class="cd" id="stHint">Verificando…</div>
+        <div id="stRows" style="margin-top:8px"></div>
+        <button class="btn alt" id="btnPersist">Solicitar armazenamento persistente</button>
+      </div>
+
+      <div class="card">
+        <div class="ct">Backup manual</div>
+        <div class="cd">
+          O backup local protege contra falha do navegador, mas não contra perda do
+          aparelho. Exporte um arquivo de tempos em tempos e guarde fora daqui —
+          é a única garantia real.
+        </div>
+        <div class="row"><span class="k">Registros</span><span class="v" id="exN">—</span></div>
+        <div class="row"><span class="k">Último export</span><span class="v" id="exLast">nunca</span></div>
+        <button class="btn" id="btnExport">Exportar backup (.json)</button>
+        <button class="btn alt" id="btnImport">Importar backup</button>
+        <input type="file" id="fileInput" accept="application/json,.json" hidden>
+      </div>
+
+      <div class="card">
+        <div class="ct">Snapshots automáticos</div>
+        <div class="cd">
+          A cada gravação, a versão anterior é guardada. Se algo der errado,
+          volte para um ponto anterior.
+        </div>
+        <div id="bkList"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Preferências</div>
+        <div class="fl"><div class="fb">Meta diária</div>
+          <input type="number" id="cfgGoal" min="1" max="60" step="1"></div>
+        <div class="fl"><div class="fb">Preço do maço (R$)</div>
+          <input type="number" id="cfgPrice" min="0" step="0.5"></div>
+        <div class="fl"><div class="fb">Cigarros por maço</div>
+          <input type="number" id="cfgPack" min="1" step="1"></div>
+        <button class="btn" id="btnCfg">Salvar preferências</button>
+      </div>
+
+      <div class="card">
+        <div class="ct">Zona de risco</div>
+        <div class="cd">Apaga todos os registros deste dispositivo. Exporte antes.</div>
+        <button class="btn danger" id="btnWipe">Apagar todos os dados</button>
+      </div>
+
+      <p class="ft">
+        Os dados ficam no seu dispositivo. Nada é enviado a servidores.
+        Limpar os dados do navegador ou desinstalar o app apaga tudo —
+        mantenha um backup exportado.
+      </p>
+    </section>
+
+  </main>
+
+  <!-- SHEET -->
+  <div class="veil" id="veil"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <div class="grab"></div>
+    <div class="sh" id="shT">Registrar</div>
+    <div class="shs" id="shS"></div>
+    <div class="fl" id="fQ"><div class="fb">Quantidade</div>
+      <div class="qty"><button id="qm" aria-label="menos">−</button>
+        <span class="q" id="qv">1</span>
+        <button id="qp" aria-label="mais">+</button></div></div>
+    <div class="fl" id="fD"><div class="fb">Data e hora</div>
+      <div class="dt"><input type="date" id="iD"><input type="time" id="iT"></div></div>
+    <div class="fl"><div class="fb">Causa <span>opcional</span></div><div class="chips" id="gC"></div></div>
+    <div class="fl"><div class="fb">Humor <span>opcional</span></div><div class="chips" id="gM"></div></div>
+    <div class="fl"><div class="fb">Vontade <span>1 = automático · 5 = forte</span></div>
+      <div class="chips" id="gV"></div></div>
+    <div class="fl"><div class="fb">Nota <span>opcional</span></div>
+      <textarea id="iN" placeholder="Ex.: discussão no trabalho"></textarea></div>
+    <button class="sv" id="sv">Salvar</button>
+    <button class="cn" id="cn">Cancelar</button>
+  </div>
+
+  <div class="toast" id="tst"><span id="tm"></span></div>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

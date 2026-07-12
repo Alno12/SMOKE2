@@ -1,0 +1,64 @@
+# ==========================================================================
+# SmokeCount — configuração de deploy Netlify
+# Site estático puro. Sem build step, sem backend, sem banco.
+# ==========================================================================
+
+[build]
+  publish = "."
+  command = ""
+
+# --------------------------------------------------------------------------
+# Cabeçalhos de segurança
+# --------------------------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # CSP restritiva: sem conexões externas além das fontes.
+    # 'unsafe-inline' em style-src é necessário para os estilos calculados
+    # nos gráficos (alturas das barras). Nenhum script inline é usado.
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# O service worker nunca pode ser servido de cache antigo, ou o app trava
+# numa versão velha para sempre.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Service-Worker-Allowed = "/"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/styles.css"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# SPA-ish fallback: qualquer rota desconhecida volta para o app.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
