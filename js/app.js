@@ -12,6 +12,9 @@ const CAUSES = ['Ao acordar','Café','Após comer','Pausa','Estresse','Tédio',
 const MOODS  = ['Neutro','Estressado','Ansioso','Entediado','Feliz','Irritado','Triste'];
 const DN = ['dom','seg','ter','qua','qui','sex','sáb'];
 const DL = ['DOM','SEG','TER','QUA','QUI','SEX','SÁB'];
+const DFULL  = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+const DWPLUR = ['aos domingos','às segundas','às terças','às quartas',
+                'às quintas','às sextas','aos sábados'];
 const HEAT = ['#F1EFEA','#F4E3C8','#EDC796','#DE9A63','#C9663E','#A83C22'];
 
 /* ---------- estado ---------- */
@@ -126,6 +129,80 @@ const clear = s => { while (s.firstChild) s.removeChild(s.firstChild); };
 const path = (d, stroke, w, extra) =>
   el('path', Object.assign({ d, fill: 'none', stroke, 'stroke-width': w,
     'vector-effect': 'non-scaling-stroke' }, extra || {}));
+
+/* ---------- painel "Agora" (ao vivo) ---------- */
+
+function fmtSince(min) {
+  if (min === null)  return { v: '—',      d: 'sem registro' };
+  if (min < 1)       return { v: 'agora',  d: 'último cigarro' };
+  if (min < 60)      return { v: Math.round(min) + ' min', d: 'desde o último' };
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  if (min < 60 * 24) return { v: h + 'h' + (m ? ' ' + pad(m) : ''), d: 'desde o último' };
+  const dias = Math.floor(min / (60 * 24));
+  return { v: dias + (dias === 1 ? ' dia' : ' dias'), d: 'desde o último' };
+}
+
+function renderLive() {
+  const live = $('live');
+  if (!records.length) { live.hidden = true; return; }
+  live.hidden = false;
+
+  const now = new Date();
+  $('liveDow').textContent = `${DFULL[now.getDay()]} · ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  // 1) Desde o último
+  const s = fmtSince(St.minutesSinceLast(records, now));
+  $('lvSince').textContent = s.v;
+  $('lvSinceD').textContent = s.d;
+
+  // 2) Hoje até agora + comparação com a média do dia da semana
+  const todayKey = dateKey(now);
+  const todayRecs = records.filter(r => dateKey(r.ts) === todayKey);
+  const todayN = todayRecs.length;
+  const pace = St.weekdayPace(records, now);
+
+  $('lvToday').textContent = todayN;
+  const dcell = $('lvTodayD');
+  if (pace.avgUpToNow === null) {
+    dcell.textContent = 'sem histórico';
+  } else {
+    const diff = todayN - pace.avgUpToNow;
+    if (diff > 0.5)       dcell.innerHTML = `<b class="up">+${nf(diff)}</b> vs média`;
+    else if (diff < -0.5) dcell.innerHTML = `<b class="dn">−${nf(Math.abs(diff))}</b> vs média`;
+    else                  dcell.innerHTML = 'na média';
+  }
+
+  // 3) Média deste dia da semana até esta hora
+  $('lvAvgK').textContent = 'Média ' + DWPLUR[pace.dow];
+  if (pace.avgUpToNow === null) {
+    $('lvAvg').textContent = '—';
+    $('lvAvgD').textContent = 'sem histórico';
+  } else {
+    $('lvAvg').textContent = nf(pace.avgUpToNow);
+    $('lvAvgD').textContent = `até ${pad(now.getHours())}:${pad(now.getMinutes())} · ${pace.nDays}d`;
+  }
+
+  // Distribuição de hoje (por hora)
+  const hrs = St.hourHistogram(todayRecs);
+  const hmax = Math.max(...hrs, 1);
+  const curH = now.getHours();
+  const wrap = $('todayHH');
+  wrap.innerHTML = '';
+  hrs.forEach((v, i) => {
+    const b = document.createElement('div');
+    b.className = 'hb';
+    const isNow = i === curH;
+    b.style.height = Math.max(v / hmax * 100, v ? 10 : (isNow ? 6 : 2)) + '%';
+    b.style.background = v ? (isNow ? 'var(--r1)' : 'var(--r2)')
+                          : (isNow ? 'var(--faint)' : 'var(--r5)');
+    b.title = `${i}h — ${v} cig${isNow ? ' · agora' : ''}`;
+    wrap.appendChild(b);
+  });
+  const peak = hrs.indexOf(Math.max(...hrs));
+  $('lcLab').textContent = todayN
+    ? `${todayN} hoje · pico ${peak}h`
+    : 'nenhum cigarro hoje';
+}
 
 function renderSerie() {
   const { days, values } = St.dailySeries(records);
@@ -1006,6 +1083,7 @@ function goTab(id) {
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('on', v.id === id));
   $('body').scrollTop = 0;
+  if (id === 'v1') renderLive();
   if (id === 'v5') renderDados();
 }
 
@@ -1060,6 +1138,13 @@ function bindUI() {
     toast('Todos os dados foram apagados');
   };
 
+  // Mantém o painel "Agora" vivo: "desde o último" e a comparação com a média
+  // do dia da semana avançam com o relógio, sem depender de novo registro.
+  setInterval(() => {
+    if (records.length && $('v1').classList.contains('on') &&
+        !$('sheet').classList.contains('on')) renderLive();
+  }, 30000);
+
   // Atalho: tecla "+" registra.
   document.addEventListener('keydown', e => {
     if (e.key === '+' && !$('sheet').classList.contains('on') &&
@@ -1073,6 +1158,7 @@ function bindUI() {
 function refresh() {
   const t = new Date(); t.setHours(0, 0, 0, 0);
   $('qn').textContent = records.filter(r => r.ts >= t).length + ' hoje';
+  renderLive();
   renderSerie();
   renderRitmo();
   renderCausas();
