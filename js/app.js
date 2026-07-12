@@ -150,10 +150,22 @@ function renderLive() {
   const now = new Date();
   $('liveDow').textContent = `${DFULL[now.getDay()]} · ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-  // 1) Desde o último
+  // 1) Desde o último — o valor é o tempo decorrido; a linha de baixo mostra
+  // a hora em que ele foi fumado.
   const s = fmtSince(St.minutesSinceLast(records, now));
   $('lvSince').textContent = s.v;
-  $('lvSinceD').textContent = s.d;
+  let lastR = null;
+  records.forEach(r => { if (r.ts <= now && (!lastR || r.ts > lastR.ts)) lastR = r; });
+  if (lastR) {
+    const tm = `${pad(lastR.ts.getHours())}:${pad(lastR.ts.getMinutes())}`;
+    const hoje = dateKey(lastR.ts) === dateKey(now);
+    const ontem = new Date(now); ontem.setDate(ontem.getDate() - 1);
+    $('lvSinceD').textContent = hoje ? `último às ${tm}`
+      : dateKey(lastR.ts) === dateKey(ontem) ? `ontem às ${tm}`
+      : `${lastR.ts.getDate()}/${lastR.ts.getMonth() + 1} às ${tm}`;
+  } else {
+    $('lvSinceD').textContent = s.d;
+  }
 
   // 2) Hoje até agora + comparação com a média do dia da semana
   const todayKey = dateKey(now);
@@ -1003,6 +1015,10 @@ async function save() {
 async function del(id) {
   const r = records.find(x => x.id === id);
   if (!r) return;
+  const tm = `${pad(r.ts.getHours())}:${pad(r.ts.getMinutes())}`;
+  const dia = dateKey(r.ts) === dateKey(new Date()) ? 'hoje'
+    : `${r.ts.getDate()}/${r.ts.getMonth() + 1}`;
+  if (!confirm(`Excluir o registro de ${dia} às ${tm}${r.cause ? ` (${r.cause})` : ''}?`)) return;
   records = records.filter(x => x.id !== id);
   await persist('delete');
   refresh();
