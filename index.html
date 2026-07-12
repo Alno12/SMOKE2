@@ -46,6 +46,34 @@
 
     <!-- ============ SÉRIE ============ -->
     <section class="view on" id="v1">
+
+      <!-- ====== AGORA (ao vivo) ====== -->
+      <div class="live" id="live" hidden>
+        <div class="live-hd"><span class="t">Agora</span><em id="liveDow">—</em></div>
+        <div class="live-grid">
+          <div class="lm">
+            <div class="lk">Desde o último</div>
+            <div class="lv" id="lvSince">—</div>
+            <div class="ld" id="lvSinceD">—</div>
+          </div>
+          <div class="lm">
+            <div class="lk">Hoje até agora</div>
+            <div class="lv" id="lvToday">—</div>
+            <div class="ld" id="lvTodayD">—</div>
+          </div>
+          <div class="lm">
+            <div class="lk" id="lvAvgK">Média</div>
+            <div class="lv" id="lvAvg">—</div>
+            <div class="ld" id="lvAvgD">—</div>
+          </div>
+        </div>
+        <div class="live-chart">
+          <div class="lc-h">Distribuição de hoje <em id="lcLab">—</em></div>
+          <div class="hh" id="todayHH"></div>
+          <div class="ax"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span></div>
+        </div>
+      </div>
+
       <div id="v1Empty" class="empty" hidden>
         Sem registros suficientes.<br>Registre alguns cigarros para a análise começar.
       </div>

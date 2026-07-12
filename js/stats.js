@@ -336,6 +336,50 @@ export const hourHistogram = records => {
   return h;
 };
 
+/** Minutos decorridos desde o cigarro mais recente. null se não houver registros. */
+export const minutesSinceLast = (records, now = new Date()) => {
+  const tNow = now.getTime();
+  let last = -Infinity;
+  records.forEach(r => {
+    const t = new Date(r.ts).getTime();
+    if (t <= tNow && t > last) last = t;
+  });
+  return last === -Infinity ? null : (tNow - last) / 60000;
+};
+
+/**
+ * Ritmo típico deste dia da semana até o horário atual.
+ *
+ * Para o mesmo dia da semana de `now`, olha cada ocorrência anterior (excluindo
+ * hoje) e conta quantos cigarros foram fumados até o mesmo horário — os minutos
+ * decorridos desde a meia-noite. Um dia observado em que nada foi fumado até ali
+ * conta como zero, puxando a média para baixo: é a comparação honesta com
+ * "como eu costumo estar a esta hora, neste dia da semana".
+ */
+export const weekdayPace = (records, now = new Date()) => {
+  const dow = now.getDay();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const todayKey = dayKey(now);
+  const total = {}, upTo = {};
+  records.forEach(r => {
+    const d = new Date(r.ts);
+    if (d.getDay() !== dow) return;
+    const k = dayKey(d);
+    if (k === todayKey) return;
+    total[k] = (total[k] || 0) + 1;
+    if (d.getHours() * 60 + d.getMinutes() <= nowMin) upTo[k] = (upTo[k] || 0) + 1;
+  });
+  const days = Object.keys(total);
+  const counts = days.map(k => upTo[k] || 0);
+  const full = days.map(k => total[k]);
+  return {
+    dow,
+    nDays: days.length,
+    avgUpToNow: counts.length ? mean(counts) : null,
+    avgFullDay: full.length ? mean(full) : null
+  };
+};
+
 /** Matriz dia-da-semana × bloco de 2h, normalizada por número de dias. */
 export const weekHourMatrix = records => {
   const M = Array.from({ length: 7 }, () => new Array(12).fill(0));
