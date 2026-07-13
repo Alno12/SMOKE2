@@ -12,14 +12,20 @@ Contador de cigarros com motor estatístico. PWA offline-first, client-side puro
 
 ## Mapa do código
 
-| Arquivo | Papel | Subagente dono |
-|---|---|---|
-| `js/stats.js` | Motor estatístico — só funções puras | `stats-engineer` |
-| `js/storage.js` | Persistência em 3 camadas + backup/import | `storage-guardian` |
-| `js/app.js` | Estado, render, orquestração de UI | `ui-designer` |
-| `index.html` / `styles.css` | Markup e design system (tokens) | `ui-designer` |
-| `sw.js` / `manifest.json` / `netlify.toml` / `_headers` | PWA, cache, CSP, deploy | `pwa-platform` |
-| `tests/` | Suíte `node --test` | `qa-verifier` |
+| Arquivo | Papel | Subagente dono | Modelo |
+|---|---|---|---|
+| `js/stats.js` | Motor estatístico — só funções puras | `stats-engineer` | fable |
+| `js/storage.js` | Persistência em 3 camadas + backup/import | `storage-guardian` | opus |
+| `js/app.js` | Estado, render, orquestração de UI | `ui-designer` | sonnet |
+| `index.html` / `styles.css` | Markup e design system (tokens) | `ui-designer` | sonnet |
+| `sw.js` / `manifest.json` / `netlify.toml` / `_headers` | PWA, cache, CSP, deploy | `pwa-platform` | sonnet |
+| `tests/` | Suíte `node --test` | `qa-verifier` | sonnet |
+
+Racional dos modelos: erro em `stats.js` é silencioso e mente ao usuário sobre
+a própria saúde (raciocínio mais profundo disponível); erro em `storage.js`
+perde dados irrecuperáveis (raciocínio forte sobre concorrência e falha
+parcial); UI, plataforma e verificação são trabalho iterativo guiado por
+convenções já embutidas nos prompts — modelo rápido rende mais ali.
 
 ## Orquestração com os subagentes (.claude/agents/)
 
