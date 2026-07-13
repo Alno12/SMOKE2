@@ -9,7 +9,7 @@
    Os dados do usuário NÃO passam por aqui — vivem em IndexedDB/localStorage.
 */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = `smokecount-shell-${VERSION}`;
 const RUNTIME = `smokecount-rt-${VERSION}`;
 
@@ -22,7 +22,9 @@ const ASSETS = [
   './js/storage.js',
   './manifest.json',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', e => {
