@@ -105,6 +105,14 @@ async function boot() {
   }
   records.sort((a, b) => b.ts - a.ts);
 
+  // Lembrete de backup (higiene). Só quando o armazenamento é durável: se não
+  // for, o banner de erro acima ("dados somem ao fechar") já está no ar e tem
+  // prioridade — é risco AGORA, não higiene. Nunca sobrepomos um pelo outro.
+  if (health.durable && store.shouldRemindBackup(config, records.length)) {
+    banner('Faz tempo que você não exporta um backup. Seus dados vivem só neste aparelho — vale guardar uma cópia.',
+      'Exportar', () => goTab('v5'));
+  }
+
   // Em navegadores que descartam dados sob pressão (Safari apaga o IndexedDB
   // após ~7 dias sem uso), pedimos persistência já no primeiro uso.
   if (health.durable) {
@@ -1169,7 +1177,8 @@ async function doImport(file) {
     const meta = await store.getMeta();
     if (meta) config = { ...config, ...meta };
     refresh();
-    toast(`Importados ${res.imported} · total ${res.total}`);
+    toast(`Importados ${res.imported} · total ${res.total}` +
+      (res.skipped ? ` · ${res.skipped} ignorado${res.skipped === 1 ? '' : 's'} por formato` : ''));
   } catch (e) {
     toast(e.message || 'Falha ao importar', null, true);
   }

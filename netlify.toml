@@ -13,10 +13,10 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    # CSP restritiva: sem conexões externas além das fontes.
+    # CSP restritiva: zero conexões externas — fontes são self-hosted.
     # 'unsafe-inline' em style-src é necessário para os estilos calculados
     # nos gráficos (alturas das barras). Nenhum script inline é usado.
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "no-referrer"
@@ -54,6 +54,11 @@
 
 [[headers]]
   for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/fonts/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
