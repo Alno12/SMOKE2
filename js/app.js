@@ -223,6 +223,98 @@ function renderLive() {
     : 'nenhum cigarro hoje';
 }
 
+/* ---------- calendário mensal ---------- */
+
+let calYM = null;   // { y, m } do mês exibido; null = mês atual no próximo render
+
+function renderCal() {
+  const wrap = $('cal');
+  if (!records.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const now = new Date();
+  if (!calYM) calYM = { y: now.getFullYear(), m: now.getMonth() };
+  const { y, m } = calYM;
+
+  const counts = {};
+  records.forEach(r => { const k = dateKey(r.ts); counts[k] = (counts[k] || 0) + 1; });
+  const firstKey = Object.keys(counts).sort()[0];
+  const todayKey = dateKey(now);
+
+  const title = new Date(y, m, 1)
+    .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  $('calTitle').textContent = title.charAt(0).toUpperCase() + title.slice(1);
+
+  // Navegação limitada ao intervalo com dados: do mês do 1º registro ao atual.
+  const minD = new Date(firstKey + 'T00:00:00');
+  $('calPrev').disabled = y < minD.getFullYear() ||
+    (y === minD.getFullYear() && m <= minD.getMonth());
+  $('calNext').disabled = y > now.getFullYear() ||
+    (y === now.getFullYear() && m >= now.getMonth());
+
+  const g = $('calGrid');
+  g.innerHTML = '';
+  ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'].forEach(d => {
+    const e = document.createElement('div');
+    e.className = 'wd'; e.textContent = d;
+    g.appendChild(e);
+  });
+
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7;   // semana começa na segunda
+  for (let i = 0; i < lead; i++) g.appendChild(document.createElement('div'));
+
+  const dim = new Date(y, m + 1, 0).getDate();
+  const GOAL = config.goal;
+  let total = 0, over = 0, nDays = 0;
+
+  for (let d = 1; d <= dim; d++) {
+    const k = dateKey(new Date(y, m, d));
+    const c = document.createElement('div');
+    c.className = 'dc';
+    if (k === todayKey) c.classList.add('td');
+
+    // Fora do período rastreado (antes do 1º registro ou no futuro):
+    // célula vazia — um "0" ali seria mentira, não vitória.
+    if (k < firstKey || k > todayKey) {
+      c.classList.add('off');
+      c.innerHTML = `<span class="d">${d}</span>`;
+      g.appendChild(c);
+      continue;
+    }
+
+    const n = counts[k] || 0;
+    total += n; nDays++;
+    if (n > GOAL) over++;
+
+    let bg = 'var(--bg)', fg = 'var(--g2)', dc = '';
+    if (n > 0 && n <= GOAL) { bg = 'var(--g4)'; fg = 'var(--g1)'; }
+    else if (n > GOAL) {
+      const r = Math.min((n - GOAL) / GOAL, 1);   // 1 = o dobro da meta ou mais
+      bg = r < .34 ? 'var(--r4)' : r < .67 ? 'var(--r3)' : r < 1 ? 'var(--r2)' : 'var(--r1)';
+      fg = r < .34 ? 'var(--r1)' : '#fff';
+      if (r >= .34) dc = 'style="color:rgba(255,255,255,.65)"';
+    }
+    c.style.background = bg;
+    c.innerHTML = `<span class="d" ${dc}>${d}</span><span class="n" style="color:${fg}">${n}</span>`;
+    c.title = `${d}/${m + 1} — ${n} cigarro${n === 1 ? '' : 's'}` +
+      (n > GOAL ? ` · meta ${GOAL}` : '');
+    g.appendChild(c);
+  }
+
+  $('calSum').innerHTML = nDays
+    ? `<b>${total}</b> no mês · média <b>${nf(total / nDays)}</b>/dia · ` +
+      (over ? `<b>${over}</b> de ${nDays} dia(s) acima da meta` : `nenhum dia acima da meta (${nDays}d)`)
+    : 'sem dias registrados neste mês';
+}
+
+function calShift(dir) {
+  if (!calYM) return;
+  calYM.m += dir;
+  if (calYM.m < 0)  { calYM.m = 11; calYM.y--; }
+  if (calYM.m > 11) { calYM.m = 0;  calYM.y++; }
+  renderCal();
+}
+
 function renderSerie() {
   const { days, values } = St.dailySeries(records);
   const n = values.length;
@@ -1109,7 +1201,7 @@ function goTab(id) {
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('on', v.id === id));
   $('body').scrollTop = 0;
-  if (id === 'v1') renderLive();
+  if (id === 'v1') { renderLive(); renderCal(); }
   if (id === 'v5') renderDados();
 }
 
@@ -1126,6 +1218,9 @@ function bindUI() {
   $('sv').onclick    = save;
   $('qm').onclick    = () => { if (qty > 1) { qty--; $('qv').textContent = qty; } };
   $('qp').onclick    = () => { qty++; $('qv').textContent = qty; };
+
+  $('calPrev').onclick = () => calShift(-1);
+  $('calNext').onclick = () => calShift(1);
 
   document.querySelectorAll('.tabs button').forEach(b => {
     b.onclick = () => goTab(b.dataset.v);
@@ -1186,6 +1281,7 @@ function refresh() {
   const t2 = new Date(t); t2.setDate(t2.getDate() + 1);
   $('qn').textContent = records.filter(r => r.ts >= t && r.ts < t2).length + ' hoje';
   renderLive();
+  renderCal();
   renderSerie();
   renderRitmo();
   renderCausas();
