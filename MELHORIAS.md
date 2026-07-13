@@ -352,7 +352,7 @@ hoje só seriam descobertos pelo usuário, pois não há build que falhe.
 | Fase | Itens | Esforço | Critério |
 |---|---|---|---|
 | **1 — Correções** ✅ | §1.1 shortcut, §1.3 corrida de gravação, §1.4 beforeunload, §2.1 F-crit, §2.2 t no IC, §1.8, §1.9 | ~1 dia | Bugs visíveis e riscos de perda de dados zerados |
-| **2 — Confiança** | §8.1 testes + CI, §6.1 fontes locais, §6.3 validação de import, §3.4 lembrete de backup | 2–3 dias | O que o README promete passa a ser verdade |
+| **2 — Confiança** ✅ | §8.1 testes + CI, §6.1 fontes locais, §6.3 validação de import, §3.4 lembrete de backup | 2–3 dias | O que o README promete passa a ser verdade |
 | **3 — Valor** | §3.1 painel de custo, §3.2 marcos/recordes, §4.1 registro rápido, §4.2 undo maior | 3–4 dias | Motivo para o usuário voltar todo dia |
 | **4 — Alcance** | §4.4 modo escuro, §5 acessibilidade, §3.5 busca, §3.6 CSV, §7 badging/multi-aba | contínuo | App confortável para qualquer usuário, a qualquer hora |
 
