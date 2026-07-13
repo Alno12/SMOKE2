@@ -74,6 +74,26 @@
         </div>
       </div>
 
+      <!-- ====== CALENDÁRIO ====== -->
+      <div class="cal" id="cal" hidden>
+        <div class="cal-hd">
+          <span class="t">Calendário</span>
+          <div class="cal-nav">
+            <button id="calPrev" aria-label="Mês anterior">‹</button>
+            <span id="calTitle">—</span>
+            <button id="calNext" aria-label="Mês seguinte">›</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-lg">
+          <i style="background:var(--bg);border:1px solid var(--line2)"></i><span>0</span>
+          <i style="background:var(--g4)"></i><span>≤ meta</span>
+          <i style="background:var(--r4)"></i><i style="background:var(--r2)"></i><i style="background:var(--r1)"></i><span>acima</span>
+          <i class="td"></i><span>hoje</span>
+        </div>
+        <div class="cal-sum" id="calSum"></div>
+      </div>
+
       <div id="v1Empty" class="empty" hidden>
         Sem registros suficientes.<br>Registre alguns cigarros para a análise começar.
       </div>
