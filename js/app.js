@@ -114,6 +114,13 @@ async function boot() {
 
   bindUI();
   refresh();
+
+  // Atalho do manifest ("Registrar cigarro") abre o app com ?action=log.
+  // A URL é limpa em seguida para um reload não reabrir o sheet.
+  if (new URLSearchParams(location.search).get('action') === 'log') {
+    history.replaceState(null, '', location.pathname);
+    openSheet('now');
+  }
 }
 
 /* ==========================================================================
@@ -231,11 +238,14 @@ function renderSerie() {
   const disp = St.dispersionIndex(values);
   const o = St.ols(values);
   const sigTrend = Math.abs(o.t) > St.tCrit(n - 2);
+  // t de Student, não z: com poucos dias (o caso do usuário novo), 1,96
+  // estreitaria o IC e o app afirmaria mais precisão do que tem.
   const se = s / Math.sqrt(n);
+  const tc = St.tCrit(n - 1);
 
   $('hMean').textContent = nf(m);
   $('hN').textContent = n;
-  $('hCI').textContent = `IC95% [${nf(m - 1.96 * se)} – ${nf(m + 1.96 * se)}]`;
+  $('hCI').textContent = `IC95% [${nf(m - tc * se)} – ${nf(m + tc * se)}]`;
   const perWeek = o.b * 7;
   $('hSlope').textContent = (o.b >= 0 ? '+' : '−') + nf(Math.abs(perWeek), 2) + '/sem';
   $('hSlope').className = 'dl ' + (o.b < 0 ? 'dn' : 'up');
@@ -374,7 +384,7 @@ function renderWeekday(days, values, gmean) {
   const G = Array.from({ length: 7 }, () => []);
   days.forEach((d, i) => G[d.getDay()].push(values[i]));
   const order = [1, 2, 3, 4, 5, 6, 0];
-  const { F, eta2 } = St.anova(order.map(i => G[i]));
+  const { F, eta2, df1, df2 } = St.anova(order.map(i => G[i]));
   const means = order.map(i => G[i].length ? St.mean(G[i]) : 0);
   const mx = Math.max(...means), mn = Math.min(...means.filter(v => v > 0));
 
@@ -394,7 +404,7 @@ function renderWeekday(days, values, gmean) {
 
   const maxD = DL[order[means.indexOf(mx)]], minD = DL[order[means.indexOf(mn)]];
   const delta = gmean ? (mx / gmean - 1) * 100 : 0;
-  const sig = F > 2.2;
+  const sig = F > St.fCrit(df1, df2);
   $('insWk').className = 'ins ' + (sig ? '' : 'nu');
   $('insWk').innerHTML = `<div class="t">ANOVA de uma via</div><div class="x">
     ${sig
@@ -1173,7 +1183,8 @@ function bindUI() {
 
 function refresh() {
   const t = new Date(); t.setHours(0, 0, 0, 0);
-  $('qn').textContent = records.filter(r => r.ts >= t).length + ' hoje';
+  const t2 = new Date(t); t2.setDate(t2.getDate() + 1);
+  $('qn').textContent = records.filter(r => r.ts >= t && r.ts < t2).length + ' hoje';
   renderLive();
   renderSerie();
   renderRitmo();

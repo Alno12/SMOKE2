@@ -123,6 +123,35 @@ const CHI95 = [3.84, 5.99, 7.81, 9.49, 11.07, 12.59, 14.07, 15.51, 16.92,
 export const chiCrit = df =>
   df <= 0 ? Infinity : df <= 20 ? CHI95[df - 1] : df + 1.645 * Math.sqrt(2 * df);
 
+/**
+ * Valor crítico de F (α=0,05) por tabela com interpolação em 1/df2.
+ * Um limiar fixo (tipo "F > 2,2") erra nos dois sentidos: com poucas semanas
+ * de dados o crítico real é bem maior (falso positivo), com meses é menor
+ * (falso negativo). df1 coberto até 6 — a ANOVA do app compara os 7 dias da
+ * semana, logo df1 = 6.
+ */
+const F95_DF2 = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 60, Infinity];
+const F95 = [ // linhas: df1 = 1..6 · colunas: df2 de F95_DF2
+  [161.4, 18.51, 10.13, 7.71, 6.61, 5.99, 5.59, 5.32, 4.96, 4.75, 4.54, 4.35, 4.17, 4.00, 3.84],
+  [199.5, 19.00,  9.55, 6.94, 5.79, 5.14, 4.74, 4.46, 4.10, 3.89, 3.68, 3.49, 3.32, 3.15, 3.00],
+  [215.7, 19.16,  9.28, 6.59, 5.41, 4.76, 4.35, 4.07, 3.71, 3.49, 3.29, 3.10, 2.92, 2.76, 2.60],
+  [224.6, 19.25,  9.12, 6.39, 5.19, 4.53, 4.12, 3.84, 3.48, 3.26, 3.06, 2.87, 2.69, 2.53, 2.37],
+  [230.2, 19.30,  9.01, 6.26, 5.05, 4.39, 3.97, 3.69, 3.33, 3.11, 2.90, 2.71, 2.53, 2.37, 2.21],
+  [234.0, 19.33,  8.94, 6.16, 4.95, 4.28, 3.87, 3.58, 3.22, 3.00, 2.79, 2.60, 2.42, 2.25, 2.10]
+];
+export const fCrit = (df1, df2) => {
+  if (df1 <= 0 || df2 <= 0) return Infinity;
+  const row = F95[Math.min(df1, 6) - 1];
+  if (df2 >= F95_DF2[F95_DF2.length - 2] * 4) return row[row.length - 1];
+  let i = 0;
+  while (i < F95_DF2.length - 1 && F95_DF2[i + 1] <= df2) i++;
+  if (F95_DF2[i] === df2 || i === F95_DF2.length - 1) return row[i];
+  // Interpola em 1/df2: a curva de F é quase linear nessa escala.
+  const a = 1 / F95_DF2[i], b = 1 / F95_DF2[i + 1], x = 1 / df2;
+  const t = (x - a) / (b - a);
+  return row[i] + t * (row[i + 1] - row[i]);
+};
+
 /** Intervalo de confiança 95% da média. */
 export const ciMean = a => {
   const n = a.length;

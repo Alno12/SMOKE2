@@ -265,13 +265,10 @@ export class Store {
     if (!this.active.length) this.active.push(new MemLayer());
     this._emit('ready', this.health());
 
-    // Rede de segurança: descarrega antes de fechar a aba.
-    window.addEventListener('beforeunload', (e) => {
-      if (this.dirty) {
-        this._flushSync();
-        e.preventDefault();
-        e.returnValue = '';
-      }
+    // Rede de segurança: descarrega antes de fechar a aba. O flush síncrono
+    // já resolve; pedir confirmação de saída ao usuário seria só atrito.
+    window.addEventListener('beforeunload', () => {
+      if (this.dirty) this._flushSync();
     });
     // Em mobile, 'beforeunload' não dispara de forma confiável.
     document.addEventListener('visibilitychange', () => {
@@ -352,7 +349,16 @@ export class Store {
   /* ---------- escrita atômica com backup rotativo ---------- */
 
   async saveRecords(records, opts = {}) {
-    if (this.saving) { this.dirty = true; return; }
+    // Gravação já em andamento: enfileira este snapshot em vez de descartar.
+    // Sem isso, uma edição feita durante o save anterior nunca chegaria às
+    // camadas duráveis se nenhuma outra gravação viesse depois.
+    if (this.saving) {
+      this._pending = records;
+      this._pendingOpts = opts;
+      this._saveQueued = true;
+      this.dirty = true;
+      return;
+    }
     this.saving = true;
 
     const env = envelope(records);
@@ -382,7 +388,6 @@ export class Store {
     }
 
     this.saving = false;
-    this.dirty  = false;
     this.lastSave = Date.now();
 
     if (wrote === 0) {
@@ -390,6 +395,14 @@ export class Store {
     } else {
       this._emit('saved', { layers: wrote, n: records.length, ts: this.lastSave });
     }
+
+    // Chegou snapshot novo enquanto gravávamos? Grava-o já — 'dirty' só cai
+    // quando o estado em disco reflete o último estado em memória.
+    if (this._saveQueued) {
+      this._saveQueued = false;
+      return this.saveRecords(this._pending, this._pendingOpts || {});
+    }
+    this.dirty = false;
     return wrote > 0;
   }
 
