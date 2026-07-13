@@ -29,6 +29,7 @@ const KEY_META   = 'meta';
 const KEY_JOURNAL= 'journal';
 const BACKUP_KEEP= 5;          // quantos snapshots anteriores manter
 const JOURNAL_MAX= 500;        // entradas do journal antes de compactar
+const NOTE_MAX   = 2000;       // teto de caracteres de nota importada
 
 /* ---------- utilidades ---------- */
 
@@ -79,6 +80,50 @@ function unwrap(env) {
     throw new Error('checksum não confere — dados corrompidos');
   }
   return JSON.parse(env.payload);
+}
+
+/**
+ * Sanitiza um registro vindo de um backup importado.
+ *
+ * Backup é vetor de conteúdo arbitrário: um arquivo malformado (ts inválido,
+ * craving fora de faixa, note gigante) entraria no estado e quebraria as
+ * renderizações. Aqui validamos campo a campo.
+ *
+ * Descartamos (retornando null) só quando o dado ESSENCIAL falta: sem `id`
+ * não há como mesclar por identidade; sem `ts` válido o cigarro não tem
+ * horário — e o horário é o registro. Campos acessórios inválidos são
+ * neutralizados (null / truncados), nunca motivam descarte do registro
+ * inteiro: perder o horário de um cigarro por causa de um craving inválido
+ * seria jogar fora o dado que importa.
+ */
+function sanitizeRecord(r) {
+  if (!r || typeof r !== 'object') return null;
+  // id: string não-vazia.
+  if (typeof r.id !== 'string' || r.id === '') return null;
+  // ts: precisa gerar uma Date válida (aceita ISO string ou epoch numérico).
+  if (r.ts === null || r.ts === undefined || isNaN(new Date(r.ts))) return null;
+
+  // Preserva campos auxiliares (createdAt, editedAt, etc.) e sobrescreve os
+  // validados. O merge por editedAt e a ordenação por ts contam com eles.
+  const clean = { ...r };
+
+  // craving: número inteiro 1–5; qualquer outra coisa zera o campo (não
+  // descarta o registro). Exige tipo number — string/boolean não coagem, para
+  // não deixar entrar "2", true ou "" virando valor por coerção silenciosa.
+  clean.craving = (typeof r.craving === 'number' &&
+                   Number.isInteger(r.craving) &&
+                   r.craving >= 1 && r.craving <= 5) ? r.craving : null;
+
+  // cause / mood: string ou null.
+  clean.cause = typeof r.cause === 'string' ? r.cause : null;
+  clean.mood  = typeof r.mood  === 'string' ? r.mood  : null;
+
+  // note: string truncada a um teto; qualquer outro tipo vira null.
+  clean.note = typeof r.note === 'string'
+    ? (r.note.length > NOTE_MAX ? r.note.slice(0, NOTE_MAX) : r.note)
+    : null;
+
+  return clean;
 }
 
 /* ---------- L1: IndexedDB ---------- */
@@ -525,7 +570,15 @@ export class Store {
       throw new Error('Este arquivo não é um backup do SmokeCount');
     }
 
-    const incoming = doc.records.filter(r => r && r.id && r.ts);
+    // Valida/sanea campo a campo. Inválidos são DESCARTADOS (contados em
+    // `skipped`), nunca lançam — um registro podre não invalida o backup todo.
+    let skipped = 0;
+    const incoming = [];
+    for (const r of doc.records) {
+      const clean = sanitizeRecord(r);
+      if (clean) incoming.push(clean);
+      else skipped++;
+    }
     if (!incoming.length) throw new Error('O arquivo não contém registros válidos');
 
     let final;
@@ -548,9 +601,48 @@ export class Store {
     return {
       records: final,
       imported: incoming.length,
+      skipped,
       total: final.length,
       added: final.length - current.length
     };
+  }
+
+  /* ---------- lembrete de backup ---------- */
+
+  /**
+   * Decide se vale lembrar o usuário de exportar um backup. Puro: recebe a
+   * config e a contagem prontas, não faz I/O (o chamador já tem ambos em mãos
+   * no boot). Modo de falha nº 1 do app é perda do dispositivo; o export é a
+   * única defesa real contra isso, então cutucamos — mas sem virar ruído.
+   *
+   * Retorna true quando:
+   *   - há pelo menos 1 registro (sem dados, nada a proteger); E
+   *   - já há histórico que valha a pena (>= MIN_RECORDS) — abaixo disso o
+   *     usuário mal começou e refazer custaria pouco; o aviso só atrapalharia; E
+   *   - nunca exportou, OU o último export tem mais de 30 dias.
+   */
+  shouldRemindBackup(config, recordCount) {
+    try {
+      // Sem config ainda: boot incompleto, não "nunca exportou". Não alarmar
+      // sobre um estado que pode nem ter carregado.
+      if (!config) return false;
+
+      const n = Number(recordCount);
+      if (!Number.isFinite(n) || n < 1) return false;
+
+      // ~20 registros ≈ um a dois dias de uso de um fumante típico: já é
+      // histórico que ninguém quer redigitar, e passou do ruído inicial.
+      const MIN_RECORDS = 20;
+      if (n < MIN_RECORDS) return false;
+
+      const last = config.lastExport;
+      if (!last) return true;                       // nunca exportou
+
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      return (Date.now() - last) > THIRTY_DAYS;
+    } catch {
+      return false;                                 // storage nunca quebra o app
+    }
   }
 
   /* ---------- diagnóstico ---------- */

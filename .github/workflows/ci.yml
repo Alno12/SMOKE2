@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    name: testes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rodar suíte (node --test)
+        # Glob explícito em vez de `node --test tests/`: a forma de diretório
+        # falha em algumas versões do Node (tenta resolver `tests` como módulo).
+        run: node --test tests/*.test.js

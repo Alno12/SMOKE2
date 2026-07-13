@@ -4,12 +4,13 @@
 
    Estratégia:
      - App shell em cache-first (HTML, CSS, JS): abre instantâneo, offline.
-     - Fontes externas em stale-while-revalidate.
+     - Fontes: self-hosted, pré-cacheadas junto com o app shell (não há
+       mais requisição a terceiros — zero rastreamento).
      - Nunca cacheia nada que não seja GET.
    Os dados do usuário NÃO passam por aqui — vivem em IndexedDB/localStorage.
 */
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL = `smokecount-shell-${VERSION}`;
 const RUNTIME = `smokecount-rt-${VERSION}`;
 
@@ -24,7 +25,15 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
-  './icons/apple-touch-icon.png'
+  './icons/apple-touch-icon.png',
+  './fonts/inter-400.woff2',
+  './fonts/inter-500.woff2',
+  './fonts/inter-600.woff2',
+  './fonts/inter-700.woff2',
+  './fonts/jetbrains-mono-400.woff2',
+  './fonts/jetbrains-mono-500.woff2',
+  './fonts/jetbrains-mono-600.woff2',
+  './fonts/jetbrains-mono-700.woff2'
 ];
 
 self.addEventListener('install', e => {
@@ -51,21 +60,6 @@ self.addEventListener('fetch', e => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-
-  // Fontes: stale-while-revalidate.
-  if (url.hostname.includes('fonts.googleapis.com') ||
-      url.hostname.includes('fonts.gstatic.com')) {
-    e.respondWith(
-      caches.open(RUNTIME).then(async cache => {
-        const cached = await cache.match(request);
-        const network = fetch(request)
-          .then(res => { if (res.ok) cache.put(request, res.clone()); return res; })
-          .catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
 
   // Mesma origem: cache-first, com atualização em segundo plano.
   if (url.origin === self.location.origin) {
