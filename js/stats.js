@@ -453,6 +453,253 @@ export const causeSequences = records => {
   );
 };
 
+/** Soma `n` dias a uma data local, devolvendo nova instância (sem mutar). */
+const addDays = (d, n) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+};
+
+/**
+ * Painel de custo financeiro (§3.1).
+ *
+ * Custo por cigarro = price/perPack. Todo valor monetário é número em R$;
+ * a formatação (vírgula decimal) é responsabilidade da UI. Se price/perPack
+ * estiverem ausentes ou inválidos (≤0, não numéricos), os campos monetários
+ * voltam null — as CONTAGENS continuam preenchidas, para a UI poder mostrar
+ * "configure o preço" sem esconder o dado real.
+ *
+ * Janelas por dia-calendário local: `today` é o dia de `now`; `week` são os
+ * últimos 7 dias corridos (hoje + 6 anteriores); `month`, os últimos 30.
+ * Registros com ts futuro em relação a `now` são ignorados (mesmo contrato
+ * de minutesSinceLast).
+ *
+ * Vieses declarados:
+ * - `daysTracked` vai do dia do primeiro registro até HOJE (inclusive), mesmo
+ *   que o último registro seja antigo — parar de registrar não zera o hábito,
+ *   e excluir os dias recentes inflaria a média. O dia de hoje é parcial e
+ *   entra no denominador, subestimando levemente `perDayAvg` no início do dia.
+ * - `projectedYear` extrapola o ritmo MÉDIO observado, de propósito: não
+ *   projeta tendência de queda nem promete economia — é "quanto custa um ano
+ *   como os dias já vividos".
+ * - `trendScenario` é um CENÁRIO separado e opcional, não uma previsão:
+ *   só existe quando a OLS sobre a série diária indica queda estatisticamente
+ *   significativa (b<0 e |t| > tCrit(n−2)) com pelo menos 14 dias de série —
+ *   menos que dois ciclos semanais deixa o efeito dia-da-semana se passar por
+ *   tendência. O gasto projetado usa a reta com piso em zero (consumo não fica
+ *   negativo) e o retorno NÃO inclui nenhuma "data de zero cigarros" (§2.6):
+ *   consumo não cai linear até zero, então só se informa a diferença de gasto
+ *   sob a hipótese "se a reta atual se mantivesse".
+ */
+export const costSummary = (records, config = {}, now = new Date()) => {
+  const price = Number(config?.price);
+  const perPack = Number(config?.perPack);
+  const hasPrice = Number.isFinite(price) && price > 0 &&
+                   Number.isFinite(perPack) && perPack > 0;
+  const costPerCig = hasPrice ? price / perPack : null;
+
+  const tNow = now.getTime();
+  const past = records.filter(r => new Date(r.ts).getTime() <= tNow);
+
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayKey = dayKey(today0);
+  const weekKeys = new Set(), monthKeys = new Set();
+  for (let i = 0; i < 30; i++) {
+    const k = dayKey(addDays(today0, -i));
+    if (i < 7) weekKeys.add(k);
+    monthKeys.add(k);
+  }
+
+  const counts = { today: 0, week: 0, month: 0, sinceStart: past.length };
+  let firstKey = null;
+  past.forEach(r => {
+    const k = dayKey(r.ts);
+    if (k === todayKey) counts.today++;
+    if (weekKeys.has(k)) counts.week++;
+    if (monthKeys.has(k)) counts.month++;
+    if (!firstKey || k < firstKey) firstKey = k;
+  });
+
+  let daysTracked = 0;
+  if (firstKey) {
+    const first = new Date(firstKey + 'T00:00:00');
+    // round absorve horas de verão (dias de 23/25h) na diferença em dias.
+    daysTracked = Math.round((today0 - first) / 86400000) + 1;
+  }
+
+  const money = c => (hasPrice ? c * costPerCig : null);
+  const cost = {
+    today: money(counts.today),
+    week: money(counts.week),
+    month: money(counts.month),
+    sinceStart: money(counts.sinceStart)
+  };
+  const perDayAvg = hasPrice && daysTracked > 0 ? cost.sinceStart / daysTracked : null;
+  const projectedYear = perDayAvg === null ? null : perDayAvg * 365;
+
+  let trendScenario = null;
+  if (hasPrice) {
+    const { values } = dailySeries(past);
+    const n = values.length;
+    if (n >= 14) {
+      const fit = ols(values);
+      const crit = tCrit(n - 2);
+      if (fit.b < 0 && Math.abs(fit.t) > crit) {
+        const HORIZON = 365;
+        let projCigs = 0;
+        for (let d = 1; d <= HORIZON; d++) {
+          projCigs += Math.max(0, fit.a + fit.b * (n - 1 + d));
+        }
+        const spendAtCurrentPace = mean(values) * HORIZON * costPerCig;
+        const spendIfTrendHolds = projCigs * costPerCig;
+        const savings = spendAtCurrentPace - spendIfTrendHolds;
+        if (savings > 0) {
+          trendScenario = {
+            horizonDays: HORIZON,
+            spendAtCurrentPace,
+            spendIfTrendHolds,
+            savings,
+            slopePerDay: fit.b,
+            n,
+            t: fit.t,
+            tCrit: crit
+          };
+        }
+      }
+    }
+  }
+
+  return { costPerCig, counts, daysTracked, cost, perDayAvg, projectedYear, trendScenario };
+};
+
+/**
+ * Recordes pessoais (§3.2).
+ *
+ * Decisões de honestidade, declaradas:
+ *
+ * - `longestGap` é o maior intervalo CORRIDO entre dois cigarros consecutivos,
+ *   atravessando viradas de dia: para "recorde de resistência" o que importa é
+ *   o tempo real sem fumar. O preço declarado: a noite de sono (e eventuais
+ *   lacunas de registro de vários dias) inflam o número. Por isso existe
+ *   também `longestGapSameDay`, no espírito de `intervals` — o maior intervalo
+ *   dentro de um mesmo dia, imune ao sono. A UI deve apresentar os dois com os
+ *   rótulos certos. O intervalo em aberto desde o último cigarro até agora é
+ *   CENSURADO (ainda não terminou) e não entra; a UI pode compará-lo via
+ *   minutesSinceLast contra longestGap.minutes.
+ *
+ * - `bestDay` percorre a série diária contígua (dailySeries): um dia sem
+ *   nenhum registro DENTRO do período rastreado conta como zero — está entre
+ *   o primeiro e o último registro, logo o app estava em uso. Dias fora desse
+ *   período nunca existiram para o app e não entram. Como um zero interno
+ *   também pode ser só esquecimento de registrar, `bestDayNonZero` dá o
+ *   melhor dia com pelo menos um registro, que é imune a esse viés.
+ *
+ * - `bestWeek` usa semanas-calendário iniciando na segunda-feira (ISO 8601) e
+ *   SÓ considera semanas com os 7 dias dentro do período rastreado: uma semana
+ *   parcial de 2 dias "ganharia" por amostragem, não por mérito. Menos de uma
+ *   semana completa de dados → null.
+ *
+ * - As sequências abaixo da meta usam a série diária contígua e PARAM no dia
+ *   do último registro: dias posteriores sem registro algum podem ser abandono
+ *   do app, não abstinência — estendê-los inflaria o recorde. O dia corrente,
+ *   se tiver registro, entra ainda parcial (pode estourar a meta até a
+ *   meia-noite); viés declarado. Meta inválida (ausente, ≤0) → streaks null.
+ *
+ * - Registros com ts FUTURO em relação a `now` são descartados antes de
+ *   qualquer cálculo (mesmo contrato de costSummary e minutesSinceLast):
+ *   um recorde ancorado num momento que ainda não aconteceu seria mentira,
+ *   e um registro futuro esticaria a série diária com zeros de dias ainda
+ *   não vividos — inflando bestDay e as sequências.
+ *
+ * - Empates são resolvidos pela ocorrência MAIS RECENTE em todos os recordes.
+ */
+export const personalRecords = (records, config = {}, now = new Date()) => {
+  const empty = {
+    longestGap: null, longestGapSameDay: null,
+    bestDay: null, bestDayNonZero: null, bestWeek: null,
+    longestStreakUnderGoal: null, currentStreakUnderGoal: null
+  };
+  const tNow = now.getTime();
+  const past = records.filter(r => new Date(r.ts).getTime() <= tNow);
+  if (!past.length) return empty;
+
+  const times = past.map(r => new Date(r.ts)).sort((a, b) => a - b);
+
+  // Maior intervalo corrido e maior intervalo dentro do mesmo dia.
+  let longestGap = null, longestGapSameDay = null;
+  for (let i = 1; i < times.length; i++) {
+    const gap = { minutes: (times[i] - times[i - 1]) / 60000, from: times[i - 1], to: times[i] };
+    if (!longestGap || gap.minutes >= longestGap.minutes) longestGap = gap;
+    if (dayKey(times[i]) === dayKey(times[i - 1]) &&
+        (!longestGapSameDay || gap.minutes >= longestGapSameDay.minutes)) {
+      longestGapSameDay = gap;
+    }
+  }
+
+  const { days, values } = dailySeries(past);
+
+  // Melhor dia (zeros internos contam) e melhor dia não-zero.
+  let bi = 0, bnz = -1;
+  values.forEach((v, i) => {
+    if (v <= values[bi]) bi = i;
+    if (v > 0 && (bnz < 0 || v <= values[bnz])) bnz = i;
+  });
+  const bestDay = { date: dayKey(days[bi]), count: values[bi] };
+  const bestDayNonZero = bnz >= 0 ? { date: dayKey(days[bnz]), count: values[bnz] } : null;
+
+  // Melhor semana-calendário completa (segunda a domingo).
+  const weeks = {};
+  days.forEach((d, i) => {
+    const k = dayKey(addDays(d, -((d.getDay() + 6) % 7)));   // segunda da semana
+    const w = weeks[k] = weeks[k] || { total: 0, n: 0 };
+    w.total += values[i];
+    w.n++;
+  });
+  let bestWeek = null;
+  Object.keys(weeks).sort().forEach(k => {
+    const w = weeks[k];
+    if (w.n < 7) return;                                     // semana parcial não compete
+    const avgPerDay = w.total / 7;
+    if (!bestWeek || avgPerDay <= bestWeek.avgPerDay) {
+      bestWeek = {
+        start: k,
+        end: dayKey(addDays(new Date(k + 'T00:00:00'), 6)),
+        avgPerDay,
+        total: w.total
+      };
+    }
+  });
+
+  // Sequências de dias com contagem ≤ meta.
+  const goal = Number(config?.goal);
+  let longestStreakUnderGoal = null, currentStreakUnderGoal = null;
+  if (Number.isFinite(goal) && goal > 0) {
+    let best = { days: 0, start: null, end: null };
+    let runStart = -1;
+    values.forEach((v, i) => {
+      if (v <= goal) {
+        if (runStart < 0) runStart = i;
+        const len = i - runStart + 1;
+        if (len >= best.days) {
+          best = { days: len, start: dayKey(days[runStart]), end: dayKey(days[i]) };
+        }
+      } else {
+        runStart = -1;
+      }
+    });
+    longestStreakUnderGoal = best;
+    currentStreakUnderGoal = runStart >= 0
+      ? { days: values.length - runStart, start: dayKey(days[runStart]), end: dayKey(days[values.length - 1]) }
+      : { days: 0, start: null, end: null };
+  }
+
+  return {
+    longestGap, longestGapSameDay,
+    bestDay, bestDayNonZero, bestWeek,
+    longestStreakUnderGoal, currentStreakUnderGoal
+  };
+};
+
 /** Agregação por causa: N, participação, vontade média e IC. */
 export const byCause = records => {
   const withCause = records.filter(r => r.cause);

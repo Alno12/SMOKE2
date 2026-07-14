@@ -91,6 +91,45 @@
         <div class="cal-sum" id="calSum"></div>
       </div>
 
+      <!-- ====== CUSTO ====== -->
+      <div class="live" id="cost" hidden>
+        <div class="live-hd"><span class="t">Custo</span><em id="costPeriod">—</em></div>
+        <div class="live-grid" id="costGrid">
+          <div class="lm">
+            <div class="lk">Hoje</div>
+            <div class="lv" id="cToday">—</div>
+            <div class="ld" id="cTodayD">—</div>
+          </div>
+          <div class="lm">
+            <div class="lk">7 dias</div>
+            <div class="lv" id="cWeek">—</div>
+            <div class="ld" id="cWeekD">—</div>
+          </div>
+          <div class="lm">
+            <div class="lk">30 dias</div>
+            <div class="lv" id="cMonth">—</div>
+            <div class="ld" id="cMonthD">—</div>
+          </div>
+        </div>
+        <div class="cal-sum" id="costFoot"></div>
+        <div class="ins ok" id="insCost" hidden></div>
+        <div class="empty" id="costEmpty" hidden>
+          Configure o preço do maço para ver quanto o hábito custa.<br>
+          <button type="button" class="cost-cfg" id="costCfgBtn">Configurar em Dados</button>
+        </div>
+      </div>
+
+      <!-- ====== RECUPERAÇÃO E RECORDES ====== -->
+      <div class="live" id="mile" hidden>
+        <div class="live-hd"><span class="t">Recuperação</span><em id="mileSince">—</em></div>
+        <div class="mi-list" id="mileList" role="list"></div>
+        <p class="nt" style="margin:9px 0 0">Marcos educativos com base em diretrizes de saúde pública (OMS/INCA). Não é orientação médica individual.</p>
+
+        <div class="live-hd" style="margin-top:16px"><span class="t">Recordes pessoais</span></div>
+        <div class="sg" id="recGrid" style="margin-top:6px"></div>
+        <div class="ins ok" id="insRec" hidden></div>
+      </div>
+
       <div id="v1Empty" class="empty" hidden>
         Sem registros suficientes.<br>Registre alguns cigarros para a análise começar.
       </div>
