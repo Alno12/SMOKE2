@@ -121,6 +121,34 @@ h2 em{font-style:normal;font-family:'JetBrains Mono',monospace;font-size:8.5px;
   font-weight:400;color:var(--soft)}
 .live-chart .hh{height:50px}
 
+/* ---------- custo ---------- */
+/* Valores em R$ correm mais longos que os do painel "Agora" (podem passar de
+   4 dígitos) — reduzido e com quebra permitida em vez de truncar com "…",
+   que esconderia dígitos de um valor financeiro. */
+#costGrid .lv{font-size:14.5px;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
+.cost-cfg{margin-top:10px;display:inline-flex;align-items:center;justify-content:center;
+  min-height:40px;padding:0 16px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--ink);font-size:11.5px;font-weight:600;cursor:pointer;
+  font-family:'Inter',sans-serif}
+.cost-cfg:hover{border-color:var(--soft)}
+
+/* ---------- recuperação (marcos) ---------- */
+.mi-list{display:flex;flex-direction:column}
+.mi{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line2)}
+.mi:last-child{border-bottom:none}
+.mi-dot{width:8px;height:8px;border-radius:50%;background:var(--pane);
+  border:1.5px solid var(--faint);flex-shrink:0}
+.mi.on .mi-dot{background:var(--g1);border-color:var(--g1)}
+.mi.next .mi-dot{border-color:var(--r1)}
+.mi-b{flex:1;min-width:0}
+.mi-l{font-size:11.5px;font-weight:600;display:block}
+.mi.on .mi-l{color:var(--g1)}
+.mi-t{font-size:9.5px;color:var(--soft);display:block;margin-top:1px;line-height:1.4}
+.mi-s{font-family:'JetBrains Mono',monospace;font-size:8.5px;color:var(--soft);
+  white-space:nowrap;flex-shrink:0;text-align:right}
+.mi.on .mi-s{color:var(--g1)}
+.mi.next .mi-s{color:var(--r1)}
+
 /* ---------- calendário ---------- */
 .cal{background:var(--pane);border:1px solid var(--line);border-radius:12px;
   padding:13px;margin-bottom:16px;box-shadow:0 6px 20px rgba(28,24,18,.06)}

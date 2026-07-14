@@ -20,7 +20,7 @@ import {
   tCrit, chiCrit, fCrit, ciMean, sigmaMR, ewmaChart, survival, hazard,
   markov, chiSquare, dayKey, dailySeries, intervals, hourHistogram,
   minutesSinceLast, weekdayPace, weekHourMatrix, firstLast,
-  causeSequences, byCause
+  causeSequences, byCause, costSummary, personalRecords
 } from '../js/stats.js';
 
 /** Compara floats com tolerância; também falha se `got` for NaN/Infinity. */
@@ -564,6 +564,365 @@ describe('byCause', () => {
     close(r.rows[1].craving, 2);                // só o craving informado
     assert.strictEqual(r.rows[1].ci, null);     // 1 craving não dá IC
     assert.strictEqual(r.rows[1].cn, 1);
+  });
+});
+
+/* ==========================================================================
+   costSummary (§3.1)
+   ========================================================================== */
+
+describe('costSummary', () => {
+  const cfg = { price: 10, perPack: 20 };          // R$ 0,50 por cigarro
+  const now = new Date(2026, 0, 15, 12, 0);        // 15/01/2026 meio-dia
+
+  // Janelas (dias-calendário): today = 15/01; week = 09/01..15/01;
+  // month = 17/12/2025..15/01/2026.
+  const recs = [
+    rec(ts(2026, 1, 15, 10)), rec(ts(2026, 1, 15, 11)),   // hoje: 2
+    rec(ts(2026, 1, 15, 13)),                             // hoje mas FUTURO (now=12h): fora
+    rec(ts(2026, 1, 10, 9)), rec(ts(2026, 1, 10, 10)), rec(ts(2026, 1, 10, 11)), // semana
+    rec(ts(2026, 1, 9, 8)),                               // borda da semana (7º dia): dentro
+    rec(ts(2026, 1, 8, 8)),                               // fora da semana, dentro do mês
+    rec(ts(2025, 12, 20, 15)), rec(ts(2025, 12, 20, 16)), // dentro do mês (≥17/12)
+    rec(ts(2025, 12, 16, 12))                             // fora do mês: só sinceStart
+  ];
+
+  it('contagens por janela, com bordas e futuro tratados', () => {
+    const r = costSummary(recs, cfg, now);
+    assert.strictEqual(r.counts.today, 2);
+    assert.strictEqual(r.counts.week, 6);         // 2 + 3 + 1
+    assert.strictEqual(r.counts.month, 9);        // 6 + 1 + 2
+    assert.strictEqual(r.counts.sinceStart, 10);  // tudo menos o registro futuro
+  });
+
+  it('custos = contagem × price/perPack', () => {
+    const r = costSummary(recs, cfg, now);
+    close(r.costPerCig, 0.5);
+    close(r.cost.today, 1);
+    close(r.cost.week, 3);
+    close(r.cost.month, 4.5);
+    close(r.cost.sinceStart, 5);
+  });
+
+  it('daysTracked do 1º registro até hoje; perDayAvg e projectedYear', () => {
+    const r = costSummary(recs, cfg, now);
+    // 16/12/2025 → 15/01/2026: 16 dias de dezembro + 15 de janeiro = 31.
+    assert.strictEqual(r.daysTracked, 31);
+    close(r.perDayAvg, 5 / 31);
+    close(r.projectedYear, (5 / 31) * 365);
+  });
+
+  it('série sem queda significativa → trendScenario null', () => {
+    // A série diária destes registros tem inclinação positiva (massa no fim);
+    // conferido externamente: b ≈ +0,016.
+    assert.strictEqual(costSummary(recs, cfg, now).trendScenario, null);
+  });
+
+  it('config inválida → custos null, contagens preservadas', () => {
+    for (const bad of [{}, { price: 0, perPack: 20 }, { price: 10, perPack: 0 },
+                       { price: NaN, perPack: 20 }, { price: -5, perPack: 20 }]) {
+      const r = costSummary(recs, bad, now);
+      assert.strictEqual(r.costPerCig, null);
+      assert.deepStrictEqual(r.cost,
+        { today: null, week: null, month: null, sinceStart: null });
+      assert.strictEqual(r.perDayAvg, null);
+      assert.strictEqual(r.projectedYear, null);
+      assert.strictEqual(r.trendScenario, null);
+      assert.strictEqual(r.counts.sinceStart, 10);   // contagem não some
+      assert.strictEqual(r.daysTracked, 31);
+    }
+  });
+
+  it('sem registros → contagens 0, custos 0, médias null, sem NaN', () => {
+    const r = costSummary([], cfg, now);
+    assert.deepStrictEqual(r.counts, { today: 0, week: 0, month: 0, sinceStart: 0 });
+    assert.strictEqual(r.daysTracked, 0);
+    assert.deepStrictEqual(r.cost, { today: 0, week: 0, month: 0, sinceStart: 0 });
+    assert.strictEqual(r.perDayAvg, null);       // 0 dias cobertos: sem média
+    assert.strictEqual(r.projectedYear, null);
+    assert.strictEqual(r.trendScenario, null);
+  });
+
+  it('um único registro hoje → daysTracked=1, média = gasto do dia', () => {
+    const r = costSummary([rec(ts(2026, 1, 15, 9))], cfg, now);
+    assert.strictEqual(r.daysTracked, 1);
+    close(r.perDayAvg, 0.5);
+    close(r.projectedYear, 0.5 * 365);
+  });
+});
+
+describe('costSummary — trendScenario', () => {
+  const cfg = { price: 10, perPack: 20 };          // R$ 0,50 por cigarro
+
+  /** Gera `counts[i]` registros no dia (2026-01-01 + i). */
+  const build = counts => {
+    const recs = [];
+    counts.forEach((c, i) => {
+      for (let j = 0; j < c; j++) recs.push(rec(ts(2026, 1, 1 + i, 10, j)));
+    });
+    return recs;
+  };
+
+  // Série de 14 dias em queda. Referências calculadas por script INDEPENDENTE
+  // (OLS clássica, sem usar js/stats.js):
+  //   Sxy=−138, Sxx=227,5 → b=−138/227,5≈−0,6066; a≈12,22857; my=116/14
+  //   ssr≈1,14725 → t≈−29,59 (|t| ≫ tCrit(12)=2,18 → queda significativa)
+  //   reta cruza zero no índice ≈20,16 → piso em zero atua no horizonte:
+  //   Σ_{d=1..365} max(0, a+b·(13+d)) = 13,4153846...
+  const falling = [12, 12, 11, 10, 10, 9, 9, 8, 7, 7, 6, 6, 5, 4];
+
+  it('queda significativa → cenário com valores de referência externos', () => {
+    const now = new Date(2026, 0, 14, 23, 0);
+    const r = costSummary(build(falling), cfg, now);
+    const s = r.trendScenario;
+    assert.ok(s !== null, 'queda significativa deveria produzir cenário');
+    assert.strictEqual(s.horizonDays, 365);
+    assert.strictEqual(s.n, 14);
+    close(s.slopePerDay, -138 / 227.5, 1e-9);
+    close(s.t, -29.590305961523136, 1e-6);
+    close(s.tCrit, 2.18);                              // tCrit(12), tabela
+    close(s.spendAtCurrentPace, (116 / 14) * 365 * 0.5, 1e-6);  // 1512,142857...
+    close(s.spendIfTrendHolds, 13.415384615384626 * 0.5, 1e-6); // 6,707692...
+    close(s.savings, 1505.435164835165, 1e-6);
+    // §2.6: o cenário NÃO anuncia data de "zero cigarros".
+    assert.ok(!('zeroDate' in s) && !('zeroAt' in s));
+  });
+
+  it('série em alta → null (não existe "economia" a inventar)', () => {
+    const rising = [...falling].reverse();
+    const now = new Date(2026, 0, 14, 23, 0);
+    assert.strictEqual(costSummary(build(rising), cfg, now).trendScenario, null);
+  });
+
+  it('série constante → null (b=0 não é queda)', () => {
+    const now = new Date(2026, 0, 14, 23, 0);
+    assert.strictEqual(
+      costSummary(build(new Array(14).fill(8)), cfg, now).trendScenario, null);
+  });
+
+  it('menos de 14 dias → null mesmo com queda perfeita de aparência', () => {
+    const now = new Date(2026, 0, 13, 23, 0);
+    const r = costSummary(build(falling.slice(0, 13)), cfg, now);
+    assert.strictEqual(r.trendScenario, null);
+  });
+});
+
+/* ==========================================================================
+   personalRecords (§3.2)
+   ========================================================================== */
+
+describe('personalRecords — gaps', () => {
+  it('gap corrido atravessa a meia-noite; gap same-day não', () => {
+    const recs = [
+      rec(ts(2026, 1, 1, 10, 0)), rec(ts(2026, 1, 1, 12, 0)),   // 120 min no dia 1
+      rec(ts(2026, 1, 2, 8, 0))                                 // 12:00→08:00 = 1200 min
+    ];
+    const r = personalRecords(recs, { goal: 10 });
+    close(r.longestGap.minutes, 1200);
+    assert.strictEqual(r.longestGap.from.getTime(), ts(2026, 1, 1, 12, 0));
+    assert.strictEqual(r.longestGap.to.getTime(), ts(2026, 1, 2, 8, 0));
+    close(r.longestGapSameDay.minutes, 120);
+    assert.strictEqual(r.longestGapSameDay.from.getTime(), ts(2026, 1, 1, 10, 0));
+    assert.strictEqual(r.longestGapSameDay.to.getTime(), ts(2026, 1, 1, 12, 0));
+  });
+
+  it('entrada desordenada é ordenada antes de medir', () => {
+    const recs = [rec(ts(2026, 1, 1, 12, 0)), rec(ts(2026, 1, 1, 10, 0))];
+    close(personalRecords(recs, {}).longestGap.minutes, 120);
+  });
+
+  it('um único registro → gaps null (não há par consecutivo)', () => {
+    const r = personalRecords([rec(ts(2026, 1, 1, 10))], { goal: 10 });
+    assert.strictEqual(r.longestGap, null);
+    assert.strictEqual(r.longestGapSameDay, null);
+  });
+});
+
+describe('personalRecords — bestDay / bestDayNonZero', () => {
+  // Série: 01/01: 2, 02/01: 1, 03/01: 0 (interno), 04/01: 1
+  const recs = [
+    rec(ts(2026, 1, 1, 10)), rec(ts(2026, 1, 1, 12)),
+    rec(ts(2026, 1, 2, 8)),
+    rec(ts(2026, 1, 4, 9))
+  ];
+
+  it('zero interno ao período rastreado vence o bestDay', () => {
+    const r = personalRecords(recs, { goal: 10 });
+    assert.deepStrictEqual(r.bestDay, { date: '2026-01-03', count: 0 });
+  });
+
+  it('bestDayNonZero ignora zeros; empate → mais recente', () => {
+    const r = personalRecords(recs, { goal: 10 });
+    // 02/01 e 04/01 empatam com 1; a ocorrência mais recente vence.
+    assert.deepStrictEqual(r.bestDayNonZero, { date: '2026-01-04', count: 1 });
+  });
+
+  it('sem zeros internos, bestDay = bestDayNonZero', () => {
+    const r = personalRecords(
+      [rec(ts(2026, 1, 1, 10)), rec(ts(2026, 1, 1, 11)), rec(ts(2026, 1, 2, 10))],
+      { goal: 10 });
+    assert.deepStrictEqual(r.bestDay, { date: '2026-01-02', count: 1 });
+    assert.deepStrictEqual(r.bestDayNonZero, r.bestDay);
+  });
+});
+
+describe('personalRecords — bestWeek (semanas ISO completas)', () => {
+  /** count registros/dia de `start` por `nDays` dias. */
+  const fill = (recs, y, mo, d, nDays, perDay) => {
+    for (let i = 0; i < nDays; i++) {
+      for (let j = 0; j < perDay; j++) recs.push(rec(ts(y, mo, d + i, 10, j)));
+    }
+  };
+
+  it('escolhe a semana de menor média/dia; parcial não compete', () => {
+    // 05/01/2026 é segunda (sanidade já verificada em weekHourMatrix).
+    const recs = [];
+    fill(recs, 2026, 1, 5, 7, 3);    // semana 1: 21 cigarros, média 3
+    fill(recs, 2026, 1, 12, 7, 2);   // semana 2: 14 cigarros, média 2
+    fill(recs, 2026, 1, 19, 1, 1);   // semana 3: só 1 dia no período → excluída
+    const r = personalRecords(recs, { goal: 10 });
+    assert.deepStrictEqual(r.bestWeek,
+      { start: '2026-01-12', end: '2026-01-18', avgPerDay: 2, total: 14 });
+  });
+
+  it('menos de uma semana completa de dados → null', () => {
+    const recs = [];
+    fill(recs, 2026, 1, 5, 6, 1);    // 6 dias: nenhuma semana completa
+    assert.strictEqual(personalRecords(recs, { goal: 10 }).bestWeek, null);
+  });
+
+  it('semana com zeros internos conta os zeros na média', () => {
+    // Semana 05–11/01 com registros só na segunda e no domingo (2+1=3): os
+    // 5 zeros internos entram → média 3/7.
+    const recs = [
+      rec(ts(2026, 1, 5, 10)), rec(ts(2026, 1, 5, 11)),
+      rec(ts(2026, 1, 11, 10))
+    ];
+    const r = personalRecords(recs, { goal: 10 });
+    close(r.bestWeek.avgPerDay, 3 / 7);
+    assert.strictEqual(r.bestWeek.total, 3);
+    assert.strictEqual(r.bestWeek.start, '2026-01-05');
+  });
+});
+
+describe('personalRecords — sequências abaixo da meta', () => {
+  const day = (d, n) =>
+    Array.from({ length: n }, (_, j) => rec(ts(2026, 1, d, 10, j)));
+
+  it('maior e atual sequência com meta 3: série [2,3,4,1,2,1]', () => {
+    const recs = [
+      ...day(1, 2), ...day(2, 3), ...day(3, 4), ...day(4, 1), ...day(5, 2), ...day(6, 1)
+    ];
+    const r = personalRecords(recs, { goal: 3 });
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 3, start: '2026-01-04', end: '2026-01-06' });
+    assert.deepStrictEqual(r.currentStreakUnderGoal,
+      { days: 3, start: '2026-01-04', end: '2026-01-06' });
+  });
+
+  it('último dia acima da meta → streak atual 0, maior preservada', () => {
+    const recs = [...day(1, 1), ...day(2, 2), ...day(3, 5)];
+    const r = personalRecords(recs, { goal: 3 });
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 2, start: '2026-01-01', end: '2026-01-02' });
+    assert.deepStrictEqual(r.currentStreakUnderGoal,
+      { days: 0, start: null, end: null });
+  });
+
+  it('dia zero interno conta na sequência (está no período rastreado)', () => {
+    // 01/01: 1, 02/01: 0 (interno), 03/01: 1 → sequência de 3 dias ≤ meta.
+    const recs = [...day(1, 1), ...day(3, 1)];
+    const r = personalRecords(recs, { goal: 3 });
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 3, start: '2026-01-01', end: '2026-01-03' });
+  });
+
+  it('empate de comprimento → sequência mais recente', () => {
+    // [1,9,1,1,9,2,2] com meta 3: duas sequências de 2; a última vence.
+    const recs = [...day(1, 1), ...day(2, 9), ...day(3, 1), ...day(4, 1),
+                  ...day(5, 9), ...day(6, 2), ...day(7, 2)];
+    const r = personalRecords(recs, { goal: 3 });
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 2, start: '2026-01-06', end: '2026-01-07' });
+  });
+
+  it('todos os dias acima da meta → streaks zeradas, não null', () => {
+    const r = personalRecords([...day(1, 5), ...day(2, 5)], { goal: 3 });
+    assert.deepStrictEqual(r.longestStreakUnderGoal, { days: 0, start: null, end: null });
+    assert.deepStrictEqual(r.currentStreakUnderGoal, { days: 0, start: null, end: null });
+  });
+
+  it('meta inválida (ausente, 0, NaN) → streaks null', () => {
+    for (const cfg of [{}, { goal: 0 }, { goal: NaN }, { goal: -1 }]) {
+      const r = personalRecords([...day(1, 1)], cfg);
+      assert.strictEqual(r.longestStreakUnderGoal, null);
+      assert.strictEqual(r.currentStreakUnderGoal, null);
+    }
+  });
+});
+
+describe('personalRecords — registros futuros são ignorados', () => {
+  // Mesmo contrato de costSummary/minutesSinceLast: recorde ancorado num
+  // momento que ainda não aconteceu seria mentira, e um ts futuro esticaria
+  // a série diária com zeros de dias não vividos.
+  const now = new Date(2026, 0, 5, 12, 0);
+  const recs = [
+    rec(ts(2026, 1, 1, 10, 0)), rec(ts(2026, 1, 1, 12, 0)),  // dia 1: 2 (gap 120)
+    rec(ts(2026, 1, 2, 8, 0)),                               // dia 2: 1 (gap corrido 1200)
+    rec(ts(2026, 1, 8, 9, 0))                                // FUTURO: fora de tudo
+  ];
+
+  it('longestGap não usa ponta futura', () => {
+    // Sem o filtro, o gap 02/01 08:00 → 08/01 09:00 (8700 min) venceria.
+    const r = personalRecords(recs, { goal: 3 }, now);
+    close(r.longestGap.minutes, 1200);
+    assert.strictEqual(r.longestGap.to.getTime(), ts(2026, 1, 2, 8, 0));
+  });
+
+  it('bestDay não inventa dia-zero futuro', () => {
+    // Sem o filtro, a série iria até 08/01 e 03/01..07/01 virariam zeros.
+    const r = personalRecords(recs, { goal: 3 }, now);
+    assert.deepStrictEqual(r.bestDay, { date: '2026-01-02', count: 1 });
+    assert.deepStrictEqual(r.bestDayNonZero, { date: '2026-01-02', count: 1 });
+  });
+
+  it('streaks não contam dias futuros: série real é só [2,1]', () => {
+    const r = personalRecords(recs, { goal: 3 }, now);
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 2, start: '2026-01-01', end: '2026-01-02' });
+    assert.deepStrictEqual(r.currentStreakUnderGoal, r.longestStreakUnderGoal);
+    assert.strictEqual(r.bestWeek, null);   // 2 dias reais: nenhuma semana completa
+  });
+
+  it('só registros futuros → estrutura toda null', () => {
+    const r = personalRecords([rec(ts(2026, 1, 8, 9, 0))], { goal: 3 }, now);
+    assert.deepStrictEqual(r, {
+      longestGap: null, longestGapSameDay: null,
+      bestDay: null, bestDayNonZero: null, bestWeek: null,
+      longestStreakUnderGoal: null, currentStreakUnderGoal: null
+    });
+  });
+});
+
+describe('personalRecords — casos-limite', () => {
+  it('sem registros → estrutura toda null', () => {
+    assert.deepStrictEqual(personalRecords([], { goal: 10 }), {
+      longestGap: null, longestGapSameDay: null,
+      bestDay: null, bestDayNonZero: null, bestWeek: null,
+      longestStreakUnderGoal: null, currentStreakUnderGoal: null
+    });
+  });
+
+  it('um único registro → bestDay e streak de 1 dia, resto null', () => {
+    const r = personalRecords([rec(ts(2026, 1, 7, 9))], { goal: 3 });
+    assert.strictEqual(r.longestGap, null);
+    assert.strictEqual(r.longestGapSameDay, null);
+    assert.deepStrictEqual(r.bestDay, { date: '2026-01-07', count: 1 });
+    assert.deepStrictEqual(r.bestDayNonZero, { date: '2026-01-07', count: 1 });
+    assert.strictEqual(r.bestWeek, null);
+    assert.deepStrictEqual(r.longestStreakUnderGoal,
+      { days: 1, start: '2026-01-07', end: '2026-01-07' });
+    assert.deepStrictEqual(r.currentStreakUnderGoal, r.longestStreakUnderGoal);
   });
 });
 

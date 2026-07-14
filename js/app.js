@@ -17,6 +17,17 @@ const DWPLUR = ['aos domingos','às segundas','às terças','às quartas',
                 'às quintas','às sextas','aos sábados'];
 const HEAT = ['#F1EFEA','#F4E3C8','#EDC796','#DE9A63','#C9663E','#A83C22'];
 
+// Linha do tempo de recuperação (OMS/INCA), ancorada em minutos desde o último
+// cigarro. `min` é o limiar em que o marco é considerado alcançado.
+const MILESTONES = [
+  { min: 20,          label: '20 minutos', text: 'Pressão arterial e pulso voltam ao normal.' },
+  { min: 8 * 60,       label: '8–12 horas', text: 'O monóxido de carbono no sangue começa a cair.' },
+  { min: 24 * 60,      label: '24 horas',   text: 'O risco de infarto começa a diminuir.' },
+  { min: 48 * 60,      label: '48 horas',   text: 'Olfato e paladar começam a se recuperar.' },
+  { min: 14 * 24 * 60, label: '2 semanas',  text: 'Circulação e função pulmonar melhoram.' },
+  { min: 365 * 24 * 60, label: '1 ano',     text: 'O risco de doença cardíaca cai para cerca da metade.' }
+];
+
 /* ---------- estado ---------- */
 let records = [];
 let config  = { goal: 10, price: 11.5, perPack: 20, lastExport: null };
@@ -29,6 +40,19 @@ const nf  = (v, d = 1) => v.toFixed(d).replace('.', ',');
 const pad = n => String(n).padStart(2, '0');
 const hm  = h => `${pad(Math.floor(h))}:${pad(Math.round((h % 1) * 60))}`;
 const dateKey = d => St.dayKey(d);
+const brl = v => v === null ? '—' : `R$ ${nf(v, 2)}`;
+
+// Formata uma duração em minutos como "Xd HHh" / "Xh MMmin" / "X min".
+function fmtDur(min) {
+  if (min === null) return '—';
+  const t = Math.round(min);
+  const d = Math.floor(t / 1440), h = Math.floor((t % 1440) / 60), m = t % 60;
+  if (d > 0) return `${d}d ${pad(h)}h`;
+  if (h > 0) return `${h}h ${pad(m)}min`;
+  return `${m} min`;
+}
+// 'YYYY-MM-DD' -> 'DD/MM'.
+const fmtDK = k => { const [, m, d] = k.split('-'); return `${d}/${m}`; };
 
 /* ==========================================================================
    Persistência
@@ -321,6 +345,127 @@ function calShift(dir) {
   if (calYM.m < 0)  { calYM.m = 11; calYM.y--; }
   if (calYM.m > 11) { calYM.m = 0;  calYM.y++; }
   renderCal();
+}
+
+/* ---------- painel de custo ---------- */
+
+function renderCost() {
+  const wrap = $('cost');
+  if (!records.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const cs = St.costSummary(records, config, new Date());
+  const grid = $('costGrid'), foot = $('costFoot'), empty = $('costEmpty'), ins = $('insCost');
+
+  if (cs.costPerCig === null) {
+    // costGrid usa .live-grid (display:grid explícito): regra de autor vence
+    // a regra [hidden] do user-agent na cascata, então só o atributo hidden
+    // não esconde visualmente — precisa do display:none inline junto.
+    grid.hidden = true;
+    grid.style.display = 'none';
+    foot.hidden = true;
+    ins.hidden = true;
+    empty.hidden = false;
+    $('costPeriod').textContent = '—';
+    return;
+  }
+
+  grid.hidden = false;
+  grid.style.display = '';
+  foot.hidden = false;
+  empty.hidden = true;
+
+  $('costPeriod').textContent = `${brl(cs.costPerCig)}/cig`;
+  $('cToday').textContent = brl(cs.cost.today);
+  $('cTodayD').textContent = `${cs.counts.today} cig`;
+  $('cWeek').textContent = brl(cs.cost.week);
+  $('cWeekD').textContent = `${cs.counts.week} cig`;
+  $('cMonth').textContent = brl(cs.cost.month);
+  $('cMonthD').textContent = `${cs.counts.month} cig`;
+
+  foot.innerHTML = `<b>${brl(cs.cost.sinceStart)}</b> desde o início (${cs.daysTracked}d) · ` +
+    `projeção anual <b>${brl(cs.projectedYear)}</b> ao ritmo médio`;
+
+  if (cs.trendScenario) {
+    ins.hidden = false;
+    ins.innerHTML = `<div class="t">Cenário hipotético</div><div class="x">
+      Sua tendência de queda é estatisticamente real. <b>Se essa reta se mantivesse</b> pelos
+      próximos 12 meses — o que não é garantido —, você gastaria <b>${brl(cs.trendScenario.savings)}
+      a menos</b> do que gastaria mantendo o ritmo médio de hoje. Não é uma previsão, é um cenário.
+      </div><div class="m">t=${nf(cs.trendScenario.t, 2)} · n=${cs.trendScenario.n} dias</div>`;
+  } else {
+    ins.hidden = true;
+  }
+}
+
+/* ---------- recuperação e recordes ---------- */
+
+function renderMile() {
+  const wrap = $('mile');
+  if (!records.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const now = new Date();
+  const sinceMin = St.minutesSinceLast(records, now);
+  $('mileSince').textContent = sinceMin === null ? '—' : `${fmtDur(sinceMin)} desde o último`;
+
+  const list = $('mileList');
+  list.innerHTML = '';
+  const nextIdx = MILESTONES.findIndex(m => sinceMin === null || sinceMin < m.min);
+  MILESTONES.forEach((m, i) => {
+    const achieved = sinceMin !== null && sinceMin >= m.min;
+    const isNext = i === nextIdx;
+    const row = document.createElement('div');
+    row.className = 'mi' + (achieved ? ' on' : '') + (isNext ? ' next' : '');
+    row.setAttribute('role', 'listitem');
+    const status = achieved ? 'alcançado' : isNext && sinceMin !== null
+      ? `faltam ${fmtDur(m.min - sinceMin)}` : '';
+    row.innerHTML = `<span class="mi-dot" aria-hidden="true"></span>
+      <span class="mi-b"><span class="mi-l">${m.label}</span><span class="mi-t">${m.text}</span></span>
+      <span class="mi-s">${status}</span>`;
+    list.appendChild(row);
+  });
+
+  const pr = St.personalRecords(records, config);
+  const beatingRecord = pr.longestGap && sinceMin !== null && sinceMin > pr.longestGap.minutes;
+
+  const fmtGapRange = g => !g ? '—'
+    : `${fmtDK(dateKey(g.from))} ${pad(g.from.getHours())}h → ${fmtDK(dateKey(g.to))} ${pad(g.to.getHours())}h`;
+
+  const bestDayD = !pr.bestDay ? '—'
+    : (pr.bestDay.count === 0 && pr.bestDayNonZero)
+      ? `${fmtDK(pr.bestDay.date)} · com registro: ${pr.bestDayNonZero.count}`
+      : fmtDK(pr.bestDay.date);
+
+  const cards = [
+    ['Maior intervalo', pr.longestGap ? fmtDur(pr.longestGap.minutes) : '—',
+      pr.longestGap ? fmtGapRange(pr.longestGap) : 'poucos registros ainda'],
+    ['Intervalo no dia', pr.longestGapSameDay ? fmtDur(pr.longestGapSameDay.minutes) : '—',
+      pr.longestGapSameDay ? fmtGapRange(pr.longestGapSameDay) : 'sem 2 cigarros no mesmo dia'],
+    ['Melhor dia', pr.bestDay ? pr.bestDay.count : '—', bestDayD],
+    ['Melhor semana', pr.bestWeek ? nf(pr.bestWeek.avgPerDay) + '<i>/dia</i>' : '—',
+      pr.bestWeek ? `${fmtDK(pr.bestWeek.start)} – ${fmtDK(pr.bestWeek.end)}` : 'precisa de 7d completos'],
+    ['Sequência recorde', pr.longestStreakUnderGoal ? pr.longestStreakUnderGoal.days + 'd' : '—',
+      !pr.longestStreakUnderGoal ? 'defina uma meta em Dados'
+        : pr.longestStreakUnderGoal.days ? 'seguidos abaixo da meta' : 'nenhum dia abaixo da meta ainda'],
+    ['Sequência atual', pr.currentStreakUnderGoal ? pr.currentStreakUnderGoal.days + 'd' : '—',
+      pr.currentStreakUnderGoal
+        ? (pr.currentStreakUnderGoal.days ? 'abaixo da meta, contando' : 'meta estourada hoje')
+        : 'defina uma meta em Dados']
+  ];
+  $('recGrid').innerHTML = cards.map(c =>
+    `<div class="sc"><div class="k">${c[0]}</div><div class="v">${c[1]}</div><div class="d">${c[2]}</div></div>`
+  ).join('');
+
+  const ins = $('insRec');
+  if (beatingRecord) {
+    ins.hidden = false;
+    ins.innerHTML = `<div class="t">Recorde em andamento</div><div class="x">
+      Você já está <b>${fmtDur(sinceMin)}</b> sem fumar — mais que seu recorde anterior de
+      <b>${fmtDur(pr.longestGap.minutes)}</b>. Cada minuto agora é um novo recorde pessoal.</div>`;
+  } else {
+    ins.hidden = true;
+  }
 }
 
 function renderSerie() {
@@ -1188,6 +1333,9 @@ async function doImport(file) {
    UI
    ========================================================================== */
 
+const TOAST_MS = 3400;       // informativo, sem ação a mirar
+const TOAST_UNDO_MS = 6600;  // com "Desfazer" — ação destrutiva (excluir) ou reversível (adicionar)
+
 function toast(msg, undo, bad) {
   const t = $('tst');
   $('tm').textContent = msg;
@@ -1196,12 +1344,38 @@ function toast(msg, undo, bad) {
   if (undo) {
     const u = document.createElement('u');
     u.textContent = 'Desfazer';
-    u.onclick = () => { undo(); t.classList.remove('on'); };
+    u.onclick = () => { undo(); hideToast(); };
     t.appendChild(u);
   }
   t.classList.add('on');
+
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove('on'), 3400);
+  t._remaining = undo ? TOAST_UNDO_MS : TOAST_MS;
+  t._deadline = Date.now() + t._remaining;
+  t._t = setTimeout(() => t.classList.remove('on'), t._remaining);
+}
+
+function hideToast() {
+  const t = $('tst');
+  clearTimeout(t._t);
+  t.classList.remove('on');
+}
+
+// Segura o timer enquanto o ponteiro/dedo está sobre o toast, para dar tempo
+// de mirar "Desfazer" sem o toast sumir embaixo do dedo. Vinculado uma única
+// vez (não em cada chamada de toast()).
+function bindToastHold() {
+  const t = $('tst');
+  t.addEventListener('pointerenter', () => {
+    if (!t.classList.contains('on')) return;
+    clearTimeout(t._t);
+    t._remaining = Math.max(0, (t._deadline || 0) - Date.now());
+  });
+  t.addEventListener('pointerleave', () => {
+    if (!t.classList.contains('on')) return;
+    t._deadline = Date.now() + t._remaining;
+    t._t = setTimeout(() => t.classList.remove('on'), t._remaining);
+  });
 }
 
 function goTab(id) {
@@ -1210,11 +1384,12 @@ function goTab(id) {
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('on', v.id === id));
   $('body').scrollTop = 0;
-  if (id === 'v1') { renderLive(); renderCal(); }
+  if (id === 'v1') { renderLive(); renderCal(); renderCost(); renderMile(); }
   if (id === 'v5') renderDados();
 }
 
 function bindUI() {
+  bindToastHold();
   buildChips($('gC'), CAUSES, 'c', true);
   buildChips($('gM'), MOODS, 'm', false);
   buildChips($('gV'), ['1', '2', '3', '4', '5'], 'v', false);
@@ -1230,6 +1405,7 @@ function bindUI() {
 
   $('calPrev').onclick = () => calShift(-1);
   $('calNext').onclick = () => calShift(1);
+  $('costCfgBtn').onclick = () => goTab('v5');
 
   document.querySelectorAll('.tabs button').forEach(b => {
     b.onclick = () => goTab(b.dataset.v);
@@ -1270,9 +1446,11 @@ function bindUI() {
 
   // Mantém o painel "Agora" vivo: "desde o último" e a comparação com a média
   // do dia da semana avançam com o relógio, sem depender de novo registro.
+  // A linha do tempo de recuperação também avança com o relógio (marcos de
+  // 20min/8h/24h... são atingidos sem nenhum registro novo).
   setInterval(() => {
     if (records.length && $('v1').classList.contains('on') &&
-        !$('sheet').classList.contains('on')) renderLive();
+        !$('sheet').classList.contains('on')) { renderLive(); renderMile(); }
   }, 30000);
 
   // Atalho: tecla "+" registra.
@@ -1291,6 +1469,8 @@ function refresh() {
   $('qn').textContent = records.filter(r => r.ts >= t && r.ts < t2).length + ' hoje';
   renderLive();
   renderCal();
+  renderCost();
+  renderMile();
   renderSerie();
   renderRitmo();
   renderCausas();
