@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 const NS = 'http://www.w3.org/2000/svg';
 
 const CAUSES = ['Ao acordar','Café','Após comer','Pausa','Estresse','Tédio',
-                'Álcool','Social','Dirigindo','Ansiedade','Insônia'];
+                'Álcool','Social','Dirigindo','Ansiedade','Insônia','Chegando em casa'];
 const MOODS  = ['Neutro','Estressado','Ansioso','Entediado','Feliz','Irritado','Triste'];
 const DN = ['dom','seg','ter','qua','qui','sex','sáb'];
 const DL = ['DOM','SEG','TER','QUA','QUI','SEX','SÁB'];
