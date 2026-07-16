@@ -10,7 +10,7 @@
    Os dados do usuário NÃO passam por aqui — vivem em IndexedDB/localStorage.
 */
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL = `smokecount-shell-${VERSION}`;
 const RUNTIME = `smokecount-rt-${VERSION}`;
 
@@ -39,7 +39,14 @@ const ASSETS = [
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(SHELL)
-      .then(c => c.addAll(ASSETS))
+      // fetch manual com cache:'reload' em vez de caches.addAll(ASSETS): addAll
+      // usa fetch() padrão, que respeita o Cache-Control do navegador (js/*,
+      // styles.css e fonts/* têm max-age longo em netlify.toml). Sem isso, um
+      // bump de VERSION podia reinstalar o cache novo com bytes ANTIGOS ainda
+      // válidos no HTTP cache local — a atualização pareceria não ter efeito.
+      .then(c => Promise.all(
+        ASSETS.map(url => fetch(url, { cache: 'reload' }).then(res => c.put(url, res)))
+      ))
       .then(() => self.skipWaiting())
       .catch(err => console.warn('[sw] falha ao pré-cachear:', err))
   );
